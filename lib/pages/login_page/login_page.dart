@@ -12,55 +12,54 @@ class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
   @override
-  State<LoginPage> createState() =>
-      _LoginPageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState
-    extends State<LoginPage> {
-  final TextEditingController
-  email =
-  TextEditingController();
-
-  final TextEditingController
-  password =
-  TextEditingController();
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController email = TextEditingController();
+  final TextEditingController password = TextEditingController();
 
   bool isLoading = false;
 
   Future<void> login() async {
+    final emailText = email.text.trim();
+    final passwordText = password.text.trim();
+
+    if (emailText.isEmpty || passwordText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Email dan password harus diisi")),
+      );
+      return;
+    }
+
     setState(() {
       isLoading = true;
     });
 
     try {
-      final response =
-      await http.post(
-        Uri.parse(
-          "${ApiService.baseUrl}/login.php",
-        ),
-
+      final response = await http.post(
+        Uri.parse("${ApiService.baseUrl}/auth/login.php"),
         body: {
-          "email":
-          email.text.trim(),
-
-          "password":
-          password.text.trim(),
+          "email": emailText,
+          "password": passwordText,
         },
       );
 
-      print(response.body);
+      // widget bisa saja sudah di-dispose selama request berjalan
+      if (!mounted) return;
 
-      final data =
-      jsonDecode(
-        response.body,
-      );
+      if (response.statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Server error (${response.statusCode})")),
+        );
+        return;
+      }
 
-      if (data["status"] ==
-          "success") {
-        if (data["role"] ==
-            "admin") {
-          Navigator.push(
+      final data = jsonDecode(response.body);
+
+      if (data["status"] == "success") {
+        if (data["role"] == "admin") {
+          Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (_) => AdminDashboardPage(
@@ -73,170 +72,89 @@ class _LoginPageState
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder:
-                  (_) =>
-                  UserDashboardPage(
-                    username:
-                    data["username"],
-                    email:
-                    data["email"],
-                  ),
+              builder: (_) => UserDashboardPage(
+                username: data["username"],
+                email: data["email"],
+              ),
             ),
           );
         }
       } else {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(
-          SnackBar(
-            content: Text(
-              data["message"] ??
-                  "Login Failed",
-            ),
-          ),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["message"] ?? "Login Failed")),
         );
       }
     } catch (e) {
-      print(e);
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Error: $e",
-          ),
-        ),
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
-
-    setState(() {
-      isLoading = false;
-    });
   }
 
   @override
   void dispose() {
     email.dispose();
     password.dispose();
-
     super.dispose();
   }
 
   @override
-  Widget build(
-      BuildContext context,
-      ) {
+  Widget build(BuildContext context) {
     return Scaffold(
       body: Padding(
-        padding:
-        const EdgeInsets.all(
-          20,
-        ),
-
+        padding: const EdgeInsets.all(20),
         child: Column(
-          mainAxisAlignment:
-          MainAxisAlignment
-              .center,
-
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
               "Login",
-
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight:
-                FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
             ),
-
-            const SizedBox(
-              height: 30,
-            ),
-
+            const SizedBox(height: 30),
             TextField(
               controller: email,
-
-              decoration:
-              const InputDecoration(
-                hintText:
-                "Email",
-
-                border:
-                OutlineInputBorder(),
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                hintText: "Email",
+                border: OutlineInputBorder(),
               ),
             ),
-
-            const SizedBox(
-              height: 20,
-            ),
-
+            const SizedBox(height: 20),
             TextField(
-              controller:
-              password,
-
-              obscureText:
-              true,
-
-              decoration:
-              const InputDecoration(
-                hintText:
-                "Password",
-
-                border:
-                OutlineInputBorder(),
+              controller: password,
+              obscureText: true,
+              decoration: const InputDecoration(
+                hintText: "Password",
+                border: OutlineInputBorder(),
               ),
             ),
-
-            const SizedBox(
-              height: 30,
-            ),
-
+            const SizedBox(height: 30),
             SizedBox(
-              width:
-              double.infinity,
-
+              width: double.infinity,
               height: 50,
-
-              child:
-              ElevatedButton(
-                onPressed:
-                isLoading
-                    ? null
-                    : login,
-
-                child:
-                isLoading
-                    ? const CircularProgressIndicator(
-                  color:
-                  Colors.white,
-                )
-                    : const Text(
-                  "Login",
-                ),
+              child: ElevatedButton(
+                onPressed: isLoading ? null : login,
+                child: isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text("Login"),
               ),
             ),
-
-            const SizedBox(
-              height: 15,
-            ),
-
+            const SizedBox(height: 15),
             TextButton(
               onPressed: () {
                 Navigator.push(
                   context,
-
-                  MaterialPageRoute(
-                    builder:
-                        (_) =>
-                    const RegisterPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const RegisterPage()),
                 );
               },
-
-              child: const Text(
-                "Belum punya akun? Register",
-              ),
+              child: const Text("Belum punya akun? Register"),
             ),
           ],
         ),

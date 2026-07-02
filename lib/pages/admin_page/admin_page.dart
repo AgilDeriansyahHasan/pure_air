@@ -5,7 +5,8 @@ import 'admin_map_kualitas_udara.dart';
 import 'admin_kelola_users.dart';
 import 'admin_validasi_data.dart';
 import 'admin_notifikasi.dart';
-
+import 'admin_prediksi_udara.dart';
+import 'admin_laporan_page.dart';
 
 class AdminDashboardPage extends StatefulWidget {
   final String username;
@@ -42,8 +43,24 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (_) => const KualitasUdaraDashboardPage(
-                   // ganti sesuai default yang kamu mau
+                  // ganti sesuai default yang kamu mau
                 ),
+              ),
+            );
+            break;
+          case "Prediksi":
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PrediksiKualitasUdaraPage(),
+              ),
+            );
+            break;
+          case "Laporan":
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LaporanPage(),
               ),
             );
             break;
@@ -149,10 +166,130 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
+  // =========================================================
+  // TAMBAHAN: dipanggil saat user pilih "Logout" dari popup akun.
+  // Konfirmasi dulu sebelum benar-benar logout.
+  // =========================================================
+  void _konfirmasiLogout() {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Logout"),
+          content: const Text("Apakah kamu yakin ingin keluar dari akun ini?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Batal"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () {
+                Navigator.pop(ctx); // tutup dialog
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const DashboardGuest(),
+                  ),
+                      (route) => false,
+                );
+              },
+              child: const Text("Logout"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // =========================================================
+  // TAMBAHAN: ikon akun di pojok kanan atas (sebelah judul
+  // "PureAir Admin"). Diklik -> muncul popup menu dengan opsi
+  // "Pengaturan" dan "Logout".
+  // =========================================================
+  Widget _buildAccountMenu() {
+    return PopupMenuButton<String>(
+      tooltip: "Akun",
+      offset: const Offset(0, 45),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      icon: const CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.blue,
+        child: Icon(Icons.person, color: Colors.white, size: 20),
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case "pengaturan":
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Halaman Pengaturan belum tersedia")),
+            );
+            break;
+          case "logout":
+            _konfirmasiLogout();
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        // Header kecil isi nama & email di dalam popup
+        PopupMenuItem<String>(
+          enabled: false,
+          child: SizedBox(
+            width: 180,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.username,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.email,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<String>(
+          value: "pengaturan",
+          child: Row(
+            children: [
+              Icon(Icons.settings, size: 18, color: Colors.black87),
+              SizedBox(width: 10),
+              Text("Pengaturan"),
+            ],
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: "logout",
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 18, color: Colors.red),
+              SizedBox(width: 10),
+              Text("Logout", style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final username = widget.username;
-    final email = widget.email;
 
     final List<Map<String, dynamic>> menuItems = [
       {"title": "User", "icon": Icons.people},
@@ -160,7 +297,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       {"title": "Prediksi", "icon": Icons.auto_graph},
       {"title": "Laporan", "icon": Icons.article},
       {"title": "Notifikasi", "icon": Icons.notifications},
-      {"title": "Polutan", "icon": Icons.science},
       {"title": "Validasi", "icon": Icons.verified},
       {"title": "Lokasi", "icon": Icons.location_on},
       {"title": "Dashboard", "icon": Icons.dashboard},
@@ -197,6 +333,9 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                           ),
                         ),
                         const Spacer(),
+                        // TAMBAHAN: ikon akun di kanan, sejajar judul.
+                        // Diklik -> popup "Pengaturan" & "Logout".
+                        _buildAccountMenu(),
                       ],
                     ),
 
@@ -219,7 +358,7 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
                       itemCount: menuItems.length,
                       gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
+                        crossAxisCount: 4,
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                         childAspectRatio: 1.1,
@@ -255,66 +394,6 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
 
                     const SizedBox(height: 20),
                   ],
-                ),
-              ),
-            ),
-          ),
-
-          // SIDEBAR
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 300),
-            left: isExpanded ? 0 : -300,
-            top: 0,
-            bottom: 0,
-            child: Container(
-              width: 280,
-              color: Colors.white,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-
-                      IconButton(
-                        onPressed: () {
-                          setState(() => isExpanded = false);
-                        },
-                        icon: const Icon(Icons.close),
-                      ),
-
-                      const Spacer(),
-
-                      ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.admin_panel_settings),
-                        ),
-                        title: Text(username),
-                        subtitle: Text(email),
-                      ),
-
-                      const SizedBox(height: 15),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const DashboardGuest(),
-                              ),
-                                  (route) => false,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                          ),
-                          icon: const Icon(Icons.logout),
-                          label: const Text("Logout"),
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ),

@@ -128,7 +128,7 @@ class NotifikasiItem {
 /// tandai_dibaca, tandai_semua_dibaca, hapus, hapus_yang_dibaca)
 /// =========================================================
 class NotifikasiService {
-  static const String _endpoint = "${ApiService.baseUrl}/notifikasi.php";
+  static const String _endpoint = "${ApiService.baseUrl}/admin/notifikasi.php";
 
   static Future<Map<String, dynamic>> getList({String severity = "", String lokasi = "semua"}) async {
     final body = <String, String>{"action": "list"};

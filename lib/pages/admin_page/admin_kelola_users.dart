@@ -15,6 +15,7 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
   List filteredUsers = [];
 
   bool isLoading = true;
+  bool isExporting = false;
 
   @override
   void initState() {
@@ -26,7 +27,7 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
   Future<void> fetchUsers() async {
     try {
       final response = await http.post(
-        Uri.parse("${ApiService.baseUrl}/users.php"),
+        Uri.parse("${ApiService.baseUrl}/admin/users.php"),
         body: {
           "action": "get",
         },
@@ -50,7 +51,7 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
   // DELETE
   Future<void> deleteUser(String id) async {
     await http.post(
-      Uri.parse("${ApiService.baseUrl}/users.php"),
+      Uri.parse("${ApiService.baseUrl}/admin/users.php"),
       body: {
         "action": "delete",
         "id": id,
@@ -58,6 +59,56 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
     );
 
     fetchUsers();
+  }
+
+  // KIRIM KE LAPORAN (tombol "Export")
+  // Mengirim kategori "user" ke tabel laporan_items di server,
+  // sehingga muncul di halaman Laporan dan bisa di-download jadi PDF
+  // bersama kategori lain.
+  Future<void> kirimKeLaporan() async {
+    setState(() {
+      isExporting = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse("${ApiService.baseUrl}/admin/laporan.php"),
+        body: {
+          "action": "kirim",
+          "kategori": "user",
+          "ringkasan": "${users.length} akun",
+        },
+      );
+
+      if (!mounted) return;
+
+      if (response.body.isEmpty) {
+        throw "Server tidak mengirim response";
+      }
+
+      final data = jsonDecode(response.body);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            data['status'] == "success"
+                ? "Data user dikirim ke laporan"
+                : (data['message'] ?? "Gagal mengirim ke laporan"),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isExporting = false;
+        });
+      }
+    }
   }
 
   // SEARCH
@@ -189,7 +240,7 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
                   if (confirm != true) return;
 
                   await http.post(
-                    Uri.parse("${ApiService.baseUrl}/users.php"),
+                    Uri.parse("${ApiService.baseUrl}/admin/users.php"),
                     body: {
                       "action": "update",
                       "id": user["id"].toString(),
@@ -285,7 +336,10 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
     );
   }
 
-  Widget userCard(Map user, int no) {
+  // userCard sekarang menerima nomor urut TAMPILAN (1, 2, 3, ...)
+  // bukan id dari database, supaya nomor selalu rapi berurutan
+  // walau ada user yang sudah dihapus.
+  Widget userCard(Map user, int urutan) {
     final username = (user["username"] ?? "-").toString();
     final email = (user["email"] ?? "-").toString();
     final role = (user["role"] ?? "-").toString();
@@ -308,11 +362,11 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // NO (id)
+          // NO (urutan tampilan, bukan id)
           SizedBox(
             width: 28,
             child: Text(
-              no.toString(),
+              urutan.toString(),
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: Colors.black54,
@@ -496,15 +550,19 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
 
               const SizedBox(height: 16),
 
-              // EXPORT
+              // EXPORT -> kirim data user ke halaman Laporan
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    // TODO: implementasi export
-                  },
-                  icon: const Icon(Icons.download),
-                  label: const Text("Export"),
+                  onPressed: isExporting ? null : kirimKeLaporan,
+                  icon: isExporting
+                      ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                      : const Icon(Icons.download),
+                  label: Text(isExporting ? "Mengirim..." : "Export"),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.black87,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -573,10 +631,9 @@ class _KelolaUserPageState extends State<KelolaUserPage> {
                   itemCount: filteredUsers.length,
                   itemBuilder: (context, index) {
                     final user = filteredUsers[index];
-                    final id = int.tryParse(
-                        user["id"].toString()) ??
-                        (index + 1);
-                    return userCard(user, id);
+                    // nomor urut tampilan, selalu rapi 1, 2, 3, ...
+                    // tidak lagi memakai id dari database
+                    return userCard(user, index + 1);
                   },
                 ),
               ),

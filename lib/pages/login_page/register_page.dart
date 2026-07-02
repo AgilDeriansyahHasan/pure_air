@@ -54,7 +54,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("${ApiService.baseUrl}/register.php"),
+        Uri.parse("${ApiService.baseUrl}/auth/register.php"),
         body: {
           "username": user,
           "email": mail,
@@ -72,6 +72,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
       final data = jsonDecode(response.body);
 
+      // pastikan widget masih ada di tree sebelum pakai context
+      if (!mounted) return;
+
       if (data['status'] == "success") {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['message'])),
@@ -87,13 +90,16 @@ class _RegisterPageState extends State<RegisterPage> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error: $e")),
       );
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -178,4 +184,30 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
     );
   }
+}
+
+Widget _polutanKecil(String label, dynamic nilai) {
+  final nilaiNum = (nilai is num) ? nilai : double.tryParse(nilai?.toString() ?? "");
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    decoration: BoxDecoration(
+      color: const Color(0xffF8F9FC),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: Colors.black12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: const TextStyle(fontSize: 10, color: Colors.black45)),
+        Text(
+          nilaiNum != null ? nilaiNum.toStringAsFixed(1) : "-",
+          style: const TextStyle(
+              fontSize: 12.5, fontWeight: FontWeight.w700),
+        ),
+      ],
+    ),
+  );
 }

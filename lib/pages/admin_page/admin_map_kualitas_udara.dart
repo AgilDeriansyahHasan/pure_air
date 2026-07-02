@@ -17,10 +17,9 @@ class LokasiData {
   int aqi;
   String updateTerakhir;
 
-  // ✅ TAMBAHAN: parameter polutan, disinkronkan otomatis dari
-  // halaman Validasi Data ketika status sebuah pembacaan
-  // di-set "Valid". Bisa null kalau lokasi belum pernah
-  // disinkronkan sama sekali.
+  // Parameter polutan, disinkronkan otomatis dari halaman Validasi
+  // Data ketika status sebuah pembacaan di-set "Valid". Bisa null
+  // kalau lokasi belum pernah disinkronkan sama sekali.
   double? pm25;
   double? pm10;
   double? co;
@@ -97,7 +96,7 @@ class LokasiData {
 /// =========================================================
 class LokasiService {
   static Future<List<LokasiData>> list({String search = "", String status = ""}) async {
-    final res = await http.post(Uri.parse("${ApiService.baseUrl}/lokasi.php"), body: {
+    final res = await http.post(Uri.parse("${ApiService.baseUrl}/admin/lokasi.php"), body: {
       "action": "list",
       "search": search,
       "status": status,
@@ -115,7 +114,7 @@ class LokasiService {
     required double lon,
     String status = "aktif",
   }) async {
-    final res = await http.post(Uri.parse("${ApiService.baseUrl}/lokasi.php"), body: {
+    final res = await http.post(Uri.parse("${ApiService.baseUrl}/admin/lokasi.php"), body: {
       "action": "tambah",
       "nama": nama,
       "latitude": lat.toString(),
@@ -135,7 +134,7 @@ class LokasiService {
     required double lon,
     String status = "aktif",
   }) async {
-    final res = await http.post(Uri.parse("${ApiService.baseUrl}/lokasi.php"), body: {
+    final res = await http.post(Uri.parse("${ApiService.baseUrl}/admin/lokasi.php"), body: {
       "action": "update",
       "id": id.toString(),
       "nama": nama,
@@ -150,7 +149,7 @@ class LokasiService {
   }
 
   static Future<void> hapus(int id) async {
-    final res = await http.post(Uri.parse("${ApiService.baseUrl}/lokasi.php"), body: {
+    final res = await http.post(Uri.parse("${ApiService.baseUrl}/admin/lokasi.php"), body: {
       "action": "hapus",
       "id": id.toString(),
     });
@@ -224,12 +223,15 @@ class _MapAirQualityPageState extends State<MapAirQualityPage> {
   LatLng? _tappedPoint;
   bool _pickMode = false;
 
-  // ✅ TAMBAHAN: titik preview dari hasil pencarian nama lokasi
-  // (mode "cari"). Beda dari _tappedPoint (hasil tap manual di peta).
-  // Saat ada nilai, peta utama otomatis bergeser ke titik ini dan
-  // menampilkan marker khusus -- tanpa menutup sheet form di atasnya.
+  // Titik preview dari hasil pencarian nama lokasi (mode "cari").
+  // Beda dari _tappedPoint (hasil tap manual di peta). Saat ada
+  // nilai, peta utama otomatis bergeser ke titik ini dan menampilkan
+  // marker khusus -- tanpa menutup sheet form di atasnya.
   LatLng? _previewPoint;
   String? _previewLabel;
+
+  // Tombol "Export ke Laporan"
+  bool _mengekspor = false;
 
   @override
   void initState() {
@@ -290,6 +292,60 @@ class _MapAirQualityPageState extends State<MapAirQualityPage> {
     });
   }
 
+  // ===================== EXPORT KE LAPORAN =====================
+
+  /// Kirim ringkasan kondisi semua lokasi (total, aktif, nonaktif,
+  /// tidak sehat) ke laporan.php sebagai kategori "lokasi". Detail
+  /// lengkap per-lokasi diambil ulang dari DB saat item laporan ini
+  /// dibuka (action=detail_lokasi), bukan dibekukan di sini.
+  Future<void> _kirimKeLaporan() async {
+    if (_lokasiList.isEmpty) {
+      _showError("Tidak ada data lokasi untuk dikirim");
+      return;
+    }
+    if (_mengekspor) return;
+
+    setState(() => _mengekspor = true);
+    try {
+      final ringkasan = "Total $_totalLokasi lokasi "
+          "(Aktif: $_totalAktif, Nonaktif: $_totalNonaktif, "
+          "Tidak sehat: $_totalTidakSehat)";
+
+      final response = await http.post(
+        Uri.parse("${ApiService.baseUrl}/admin/laporan.php"),
+        body: {
+          "action": "kirim",
+          "kategori": "lokasi",
+          "ringkasan": ringkasan,
+        },
+      );
+
+      if (!mounted) return;
+
+      if (response.body.isEmpty) {
+        throw "Server tidak mengirim response";
+      }
+
+      final data = jsonDecode(response.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            data['status'] == "success"
+                ? "Data lokasi berhasil dikirim ke laporan"
+                : (data['message'] ?? "Gagal mengirim ke laporan"),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      if (mounted) setState(() => _mengekspor = false);
+    }
+  }
+
   // ===================== DETAIL SHEET =====================
 
   void _showLokasiDetailSheet(LokasiData lokasi) {
@@ -343,9 +399,9 @@ class _MapAirQualityPageState extends State<MapAirQualityPage> {
               _detailRow("Terakhir update", lokasi.updateTerakhir),
               _detailRow("Status", lokasi.aktif ? "Aktif" : "Nonaktif"),
 
-              // ✅ TAMBAHAN: parameter polutan, hanya ditampilkan
-              // kalau lokasi ini sudah pernah disinkronkan dari
-              // halaman Validasi Data (statusnya pernah "Valid").
+              // Parameter polutan, hanya ditampilkan kalau lokasi ini
+              // sudah pernah disinkronkan dari halaman Validasi Data
+              // (statusnya pernah "Valid").
               if (lokasi.punyaParameter) ...[
                 const SizedBox(height: 16),
                 const Text(
@@ -885,6 +941,17 @@ class _MapAirQualityPageState extends State<MapAirQualityPage> {
         foregroundColor: Colors.black87,
         elevation: 0.5,
         actions: [
+          IconButton(
+            onPressed: _mengekspor ? null : _kirimKeLaporan,
+            tooltip: "Export ke Laporan",
+            icon: _mengekspor
+                ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : const Icon(Icons.ios_share),
+          ),
           IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh)),
         ],
       ),
