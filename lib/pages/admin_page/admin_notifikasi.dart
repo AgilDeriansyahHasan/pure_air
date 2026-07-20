@@ -4,17 +4,17 @@ import 'package:http/http.dart' as http;
 import '../../services/users.dart';
 
 /// =========================================================
-/// WARNA TEMA (dark, samakan dengan halaman lain)
+/// WARNA TEMA (light, konsisten dengan halaman lain)
 /// =========================================================
 class _Tema {
-  static const bg = Color(0xFF17171B);
-  static const card = Color(0xFF222226);
-  static const cardBorder = Color(0xFF2E2E33);
-  static const teksAbu = Color(0xFF9A9AA2);
-  static const teksPutih = Color(0xFFF2F2F3);
-  static const biru = Color(0xFF3B82F6);
-  static const kuning = Color(0xFFFACC15); // WARNING
-  static const merah = Color(0xFFF87171); // DANGER
+  static const bg         = Color(0xFFF6F7FB);
+  static const card       = Color(0xFFFFFFFF);
+  static const cardBorder = Color(0xFFE9EAF0);
+  static const teksAbu    = Color(0xFF6B7280);
+  static const teksPutih  = Color(0xFF111827);
+  static const aksen      = Color(0xFFFB7155); // warna utama / aktif
+  static const kuning     = Color(0xFFEAB308); // WARNING
+  static const merah      = Color(0xFFEF4444); // DANGER
 }
 
 /// =========================================================
@@ -84,7 +84,7 @@ class NotifikasiItem {
       case "WARNING":
         return _Tema.kuning;
       default:
-        return _Tema.teksAbu;
+        return _Tema.aksen;
     }
   }
 
@@ -93,21 +93,21 @@ class NotifikasiItem {
   IconData get ikon {
     switch (tipe) {
       case "AQI_TINGGI":
-        return Icons.show_chart;
+        return Icons.show_chart_rounded;
       case "SINKRONISASI_GAGAL":
-        return Icons.sync_problem;
+        return Icons.sync_problem_rounded;
       case "LOKASI_BELUM_TERDAFTAR":
         return Icons.location_off_outlined;
       case "LOKASI_BARU":
-        return Icons.add_circle_outline;
+        return Icons.add_circle_outline_rounded;
       case "STATUS_DIVALIDASI":
-        return Icons.check_circle_outline;
+        return Icons.check_circle_outline_rounded;
       case "DATA_DIHUBUNGKAN":
-        return Icons.link;
+        return Icons.link_rounded;
       case "DATA_DIPERBARUI":
-        return Icons.refresh;
+        return Icons.refresh_rounded;
       default:
-        return Icons.notifications_none;
+        return Icons.notifications_none_rounded;
     }
   }
 
@@ -283,7 +283,14 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
   void _tampilkanError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: const Color(0xFF1F2937),
+        content: Text(message),
+      ),
+    );
   }
 
   void _pilihLokasiFilter() {
@@ -295,20 +302,51 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
         final daftar = ["semua", ..._daftarLokasi];
         return ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          children: daftar.map((nama) {
-            final label = nama == "semua" ? "Semua lokasi" : nama;
-            return ListTile(
-              leading: const Icon(Icons.location_on_outlined, color: _Tema.teksAbu),
-              title: Text(label, style: const TextStyle(color: _Tema.teksPutih)),
-              trailing: nama == _filterLokasi ? const Icon(Icons.check, color: _Tema.biru) : null,
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(() => _filterLokasi = nama);
-                _muatData();
-              },
-            );
-          }).toList(),
+          padding: const EdgeInsets.only(top: 10, bottom: 12),
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: _Tema.cardBorder,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 18),
+              child: Text("Filter Lokasi",
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
+            ),
+            const SizedBox(height: 6),
+            ...daftar.map((nama) {
+              final label = nama == "semua" ? "Semua lokasi" : nama;
+              final aktif = nama == _filterLokasi;
+              return ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: (aktif ? _Tema.aksen : _Tema.teksAbu).withOpacity(.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.location_on_rounded, size: 16, color: aktif ? _Tema.aksen : _Tema.teksAbu),
+                ),
+                title: Text(label,
+                    style: TextStyle(
+                      color: _Tema.teksPutih,
+                      fontWeight: aktif ? FontWeight.w700 : FontWeight.w500,
+                    )),
+                trailing: aktif ? const Icon(Icons.check_circle_rounded, color: _Tema.aksen) : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _filterLokasi = nama);
+                  _muatData();
+                },
+              );
+            }),
+          ],
         );
       },
     );
@@ -324,9 +362,10 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
             _buildHeader(),
             Expanded(
               child: RefreshIndicator(
+                color: _Tema.aksen,
                 onRefresh: _muatData,
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: CircularProgressIndicator(color: _Tema.aksen))
                     : _error != null
                     ? _buildError()
                     : _buildKonten(),
@@ -340,7 +379,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -355,30 +394,45 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: _Tema.card,
-                    border: Border.all(color: _Tema.cardBorder),
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                        color: Colors.black.withOpacity(.05),
+                      ),
+                    ],
                   ),
-                  child: const Icon(Icons.arrow_back, size: 18, color: _Tema.teksPutih),
+                  child: const Icon(Icons.arrow_back_rounded, size: 18, color: _Tema.teksPutih),
                 ),
               ),
               const SizedBox(width: 12),
               const Expanded(
                 child: Text("Notifikasi",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: _Tema.teksPutih)),
               ),
-              OutlinedButton.icon(
-                onPressed: _tandaiSemuaDibaca,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: _Tema.cardBorder),
-                  foregroundColor: _Tema.teksPutih,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              if (_belumDibaca > 0)
+                InkWell(
+                  onTap: _tandaiSemuaDibaca,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _Tema.aksen.withOpacity(.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _Tema.aksen.withOpacity(.25)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.done_all_rounded, size: 15, color: _Tema.aksen),
+                      const SizedBox(width: 5),
+                      const Text("Tandai dibaca",
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _Tema.aksen)),
+                    ]),
+                  ),
                 ),
-                icon: const Icon(Icons.done_all, size: 16),
-                label: const Text("Tandai semua dibaca", style: TextStyle(fontSize: 12)),
-              ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text("Peringatan kenaikan AQI dan aktivitas sistem pemantauan",
               style: TextStyle(fontSize: 12.5, color: _Tema.teksAbu)),
         ],
@@ -390,14 +444,31 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
     return ListView(
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 100, left: 24, right: 24),
+          padding: const EdgeInsets.only(top: 110, left: 24, right: 24),
           child: Column(
             children: [
-              const Icon(Icons.cloud_off, size: 40, color: _Tema.teksAbu),
-              const SizedBox(height: 8),
-              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: _Tema.teksAbu)),
-              const SizedBox(height: 12),
-              ElevatedButton(onPressed: _muatData, child: const Text("Coba lagi")),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _Tema.aksen.withOpacity(.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.cloud_off_rounded, size: 32, color: _Tema.aksen),
+              ),
+              const SizedBox(height: 14),
+              Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: _Tema.teksAbu, fontSize: 13)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _muatData,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _Tema.aksen,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text("Coba lagi"),
+              ),
             ],
           ),
         ),
@@ -412,14 +483,14 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
         // ===== KARTU RINGKASAN =====
         Row(
           children: [
-            Expanded(child: _ringkasanCard("Belum dibaca", "$_belumDibaca", _Tema.teksPutih)),
+            Expanded(child: _ringkasanCard("Belum dibaca", "$_belumDibaca", _Tema.aksen, Icons.mark_email_unread_rounded)),
             const SizedBox(width: 8),
-            Expanded(child: _ringkasanCard("Peringatan AQI", "$_totalPeringatan", _Tema.kuning)),
+            Expanded(child: _ringkasanCard("Peringatan AQI", "$_totalPeringatan", _Tema.kuning, Icons.warning_amber_rounded)),
             const SizedBox(width: 8),
-            Expanded(child: _ringkasanCard("Hari ini", "$_jumlahHariIni", _Tema.teksPutih)),
+            Expanded(child: _ringkasanCard("Hari ini", "$_jumlahHariIni", const Color(0xFF3B82F6), Icons.today_rounded)),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
         // ===== TAB FILTER =====
         Row(
@@ -431,28 +502,37 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
             _tabFilter("Info", "info"),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
 
         // ===== DROPDOWN LOKASI =====
         InkWell(
           onTap: _pilihLokasiFilter,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
               color: _Tema.card,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(color: _Tema.cardBorder),
+              boxShadow: [
+                BoxShadow(
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                  color: Colors.black.withOpacity(.03),
+                ),
+              ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                const Icon(Icons.location_on_rounded, size: 14, color: _Tema.aksen),
+                const SizedBox(width: 6),
                 Text(
                   _filterLokasi == "semua" ? "Semua lokasi" : _filterLokasi,
-                  style: const TextStyle(fontSize: 12.5, color: _Tema.teksPutih),
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: _Tema.teksPutih),
                 ),
                 const SizedBox(width: 4),
-                const Icon(Icons.keyboard_arrow_down, size: 16, color: _Tema.teksAbu),
+                const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: _Tema.teksAbu),
               ],
             ),
           ),
@@ -461,11 +541,20 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
         // ===== LIST NOTIFIKASI =====
         if (_itemTampil.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Center(
-              child: Text("Tidak ada notifikasi", style: TextStyle(color: _Tema.teksAbu, fontSize: 13)),
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 50),
+            child: Column(children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _Tema.aksen.withOpacity(.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.notifications_off_rounded, size: 28, color: _Tema.aksen),
+              ),
+              const SizedBox(height: 14),
+              const Text("Tidak ada notifikasi", style: TextStyle(color: _Tema.teksAbu, fontSize: 13)),
+            ]),
           )
         else
           ..._itemTampil.map((item) => _notifikasiCard(item)),
@@ -473,20 +562,36 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
     );
   }
 
-  Widget _ringkasanCard(String label, String value, Color valueColor) {
+  Widget _ringkasanCard(String label, String value, Color accent, IconData icon) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
       decoration: BoxDecoration(
         color: _Tema.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            color: accent.withOpacity(.06),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: _Tema.teksAbu)),
-          const SizedBox(height: 4),
-          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: valueColor)),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 14, color: accent),
+          ),
+          const SizedBox(height: 8),
+          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: accent)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(fontSize: 10.5, color: _Tema.teksAbu, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -494,22 +599,35 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
 
   Widget _tabFilter(String label, String value) {
     final aktif = _filterTab == value;
-    return InkWell(
-      onTap: () => setState(() => _filterTab = value),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: aktif ? _Tema.biru : _Tema.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: aktif ? _Tema.biru : _Tema.cardBorder),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w500,
-            color: aktif ? Colors.white : _Tema.teksAbu,
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _filterTab = value),
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: aktif ? _Tema.aksen : _Tema.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: aktif ? _Tema.aksen : _Tema.cardBorder),
+            boxShadow: aktif
+                ? [
+              BoxShadow(
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+                color: _Tema.aksen.withOpacity(.3),
+              ),
+            ]
+                : [],
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: aktif ? FontWeight.w700 : FontWeight.w500,
+              color: aktif ? Colors.white : _Tema.teksAbu,
+            ),
           ),
         ),
       ),
@@ -517,30 +635,37 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
   }
 
   Widget _notifikasiCard(NotifikasiItem item) {
-    final opacity = item.dibaca ? 0.55 : 1.0;
+    final opacity = item.dibaca ? 0.6 : 1.0;
 
     return Opacity(
       opacity: opacity,
       child: InkWell(
         onTap: () => _tapItem(item),
         onLongPress: () => _konfirmasiHapus(item),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: _Tema.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _Tema.cardBorder),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: item.dibaca ? _Tema.cardBorder : item.warnaSeverity.withOpacity(.3)),
+            boxShadow: [
+              BoxShadow(
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(.03),
+              ),
+            ],
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: item.warnaSeverity.withOpacity(0.15),
+                  color: item.warnaSeverity.withOpacity(0.12),
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
@@ -558,7 +683,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
                           child: Text(
                             item.judul,
                             style: const TextStyle(
-                                fontSize: 13.5, fontWeight: FontWeight.w600, color: _Tema.teksPutih),
+                                fontSize: 13.5, fontWeight: FontWeight.w700, color: _Tema.teksPutih),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -568,7 +693,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
                           Container(
                             width: 7,
                             height: 7,
-                            decoration: const BoxDecoration(color: _Tema.biru, shape: BoxShape.circle),
+                            decoration: const BoxDecoration(color: _Tema.aksen, shape: BoxShape.circle),
                           ),
                         ],
                       ],
@@ -582,19 +707,19 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: item.warnaSeverity.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(6),
+                            color: item.warnaSeverity.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
                             item.labelSeverity,
-                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: item.warnaSeverity),
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: item.warnaSeverity),
                           ),
                         ),
                         if (item.namaLokasi != null && item.namaLokasi!.isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          const Icon(Icons.location_on_outlined, size: 12, color: _Tema.teksAbu),
+                          const Icon(Icons.location_on_rounded, size: 12, color: _Tema.teksAbu),
                           const SizedBox(width: 2),
                           Text(item.namaLokasi!, style: const TextStyle(fontSize: 11, color: _Tema.teksAbu)),
                         ],
@@ -615,11 +740,40 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _Tema.card,
-        title: const Text("Hapus notifikasi?", style: TextStyle(color: _Tema.teksPutih)),
-        content: Text(item.judul, style: const TextStyle(color: _Tema.teksAbu)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _Tema.merah.withOpacity(.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.delete_outline_rounded, color: _Tema.merah, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text("Hapus notifikasi?",
+                style: TextStyle(color: _Tema.teksPutih, fontWeight: FontWeight.w700, fontSize: 17)),
+          ],
+        ),
+        content: Text(item.judul, style: const TextStyle(color: _Tema.teksAbu, fontSize: 13.5)),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Batal")),
           TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(foregroundColor: _Tema.teksAbu),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _Tema.merah,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               try {
@@ -629,7 +783,7 @@ class _NotifikasiPageState extends State<NotifikasiPage> {
                 _tampilkanError(e.toString().replaceFirst("Exception: ", ""));
               }
             },
-            child: const Text("Hapus", style: TextStyle(color: Colors.red)),
+            child: const Text("Hapus"),
           ),
         ],
       ),

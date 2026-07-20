@@ -5,15 +5,23 @@ import 'package:http/http.dart' as http;
 import '../../services/users.dart';
 
 // =========================================================
-// WARNA TEMA (dark) -- konsisten dengan history.dart
+// WARNA TEMA (light) -- konsisten dengan dashboard kualitas udara
 // =========================================================
 class _Tema {
-  static const bg         = Color(0xFF17171B);
-  static const card       = Color(0xFF222226);
-  static const cardBorder = Color(0xFF2E2E33);
-  static const teksAbu    = Color(0xFF9A9AA2);
-  static const teksPutih  = Color(0xFFF2F2F3);
+  static const bg         = Color(0xFFF6F7FB);
+  static const card       = Color(0xFFFFFFFF);
+  static const cardBorder = Color(0xFFE9EAF0);
+  static const teksAbu    = Color(0xFF6B7280);
+  static const teksPutih  = Color(0xFF111827); // nama var dipertahankan, tapi ini warna teks utama (gelap)
   static const aksen      = Color(0xFFFB7155);
+
+  static List<BoxShadow> cardShadow({double opacity = 0.04}) => [
+    BoxShadow(
+      blurRadius: 16,
+      offset: const Offset(0, 6),
+      color: Colors.black.withOpacity(opacity),
+    ),
+  ];
 }
 
 // =========================================================
@@ -160,7 +168,7 @@ class PrediksiHarian {
 }
 
 // =========================================================
-// KATEGORI AQI
+// KATEGORI AQI (warna disesuaikan supaya kontras di latar putih)
 // =========================================================
 class AqiKategori {
   final String label;
@@ -169,12 +177,12 @@ class AqiKategori {
 }
 
 AqiKategori kategoriDariAqi(double aqi) {
-  if (aqi <= 50)  return AqiKategori("Baik",               const Color(0xFF4ADE80));
-  if (aqi <= 100) return AqiKategori("Sedang",             const Color(0xFFFACC15));
-  if (aqi <= 150) return AqiKategori("Tidak sehat (SG)",   const Color(0xFFFB923C));
-  if (aqi <= 200) return AqiKategori("Tidak sehat",        const Color(0xFFF87171));
-  if (aqi <= 300) return AqiKategori("Sangat tidak sehat", const Color(0xFFC084FC));
-  return             AqiKategori("Berbahaya",               const Color(0xFF991B1B));
+  if (aqi <= 50)  return AqiKategori("Baik",               const Color(0xFF22C55E));
+  if (aqi <= 100) return AqiKategori("Sedang",             const Color(0xFFEAB308));
+  if (aqi <= 150) return AqiKategori("Tidak sehat (SG)",   const Color(0xFFF97316));
+  if (aqi <= 200) return AqiKategori("Tidak sehat",        const Color(0xFFEF4444));
+  if (aqi <= 300) return AqiKategori("Sangat tidak sehat", const Color(0xFFA855F7));
+  return             AqiKategori("Berbahaya",               const Color(0xFF7F1D1D));
 }
 
 // =========================================================
@@ -282,7 +290,7 @@ class PrediksiKualitasUdaraPage extends StatefulWidget {
 }
 
 class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
-  late String                    _lokasiAktif = widget.namaLokasi;
+  String                          _lokasiAktif = "";
   List<String>                   _daftarLokasi = [];
   List<PrediksiHarian>           _prediksi = [];
   List<PrediksiHarian>           _prediksiHarian = [];
@@ -302,16 +310,31 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   @override
   void initState() {
     super.initState();
+    _lokasiAktif = widget.namaLokasi;
     _muatDaftarLokasi();
     _muatData();
   }
+
+  String _pesanError(Object e) => e.toString().replaceFirst("Exception: ", "");
 
   Future<void> _muatDaftarLokasi() async {
     try {
       final daftar = await PrediksiKualitasUdaraService.getDaftarLokasi();
       if (!mounted) return;
       setState(() => _daftarLokasi = daftar);
-    } catch (_) {}
+    } catch (_) {
+      // Dropdown lokasi cukup jatuh balik ke [_lokasiAktif], tidak fatal.
+    }
+  }
+
+  bool _pastikanLokasiDipilih() {
+    if (_lokasiAktif == "Pilih Lokasi") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Pilih lokasi terlebih dahulu")),
+      );
+      return false;
+    }
+    return true;
   }
 
   void _pilihLokasi() {
@@ -327,10 +350,11 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(vertical: 12),
           children: daftar.map((nama) => ListTile(
-            leading: const Icon(Icons.location_on_outlined, color: _Tema.teksAbu),
+            leading: Icon(Icons.location_on_outlined,
+                color: nama == _lokasiAktif ? _Tema.aksen : _Tema.teksAbu),
             title: Text(nama, style: const TextStyle(color: _Tema.teksPutih)),
             trailing: nama == _lokasiAktif
-                ? const Icon(Icons.check, color: _Tema.aksen)
+                ? const Icon(Icons.check_circle_rounded, color: _Tema.aksen)
                 : null,
             onTap: () {
               Navigator.pop(ctx);
@@ -362,20 +386,14 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString().replaceFirst("Exception: ", ""));
+      setState(() => _error = _pesanError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _latihUlang() async {
-    if (_melatih) return;
-    if (_lokasiAktif == "Pilih Lokasi") {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Pilih lokasi terlebih dahulu")),
-      );
-      return;
-    }
+    if (_melatih || !_pastikanLokasiDipilih()) return;
     setState(() => _melatih = true);
     try {
       final model = await PrediksiKualitasUdaraService.latihModel(_lokasiAktif);
@@ -386,22 +404,15 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst("Exception: ", ""))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_pesanError(e))));
     } finally {
       if (mounted) setState(() => _melatih = false);
     }
   }
 
   Future<void> _jalankan() async {
-    if (_menjalankan) return;
-    if (_lokasiAktif == "Pilih Lokasi") {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Pilih lokasi terlebih dahulu")),
-      );
-      return;
-    }
+    if (_menjalankan || !_pastikanLokasiDipilih()) return;
     setState(() => _menjalankan = true);
     try {
       final hasil = await PrediksiKualitasUdaraService.jalankanPrediksi(_lokasiAktif, jumlahHari: 7);
@@ -416,9 +427,8 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst("Exception: ", ""))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_pesanError(e))));
     } finally {
       if (mounted) setState(() => _menjalankan = false);
     }
@@ -429,12 +439,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   /// Laporan" di KualitasUdaraDashboardPage: ringkasan diisi nama
   /// lokasi, dipakai lagi sebagai kunci saat ambil detail nanti.
   Future<void> _kirimKeLaporan() async {
-    if (_lokasiAktif == "Pilih Lokasi") {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Pilih lokasi terlebih dahulu")),
-      );
-      return;
-    }
+    if (!_pastikanLokasiDipilih()) return;
     if (_prediksiHarian.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Belum ada hasil prediksi untuk lokasi ini")),
@@ -457,7 +462,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
       if (!mounted) return;
 
       if (response.body.isEmpty) {
-        throw "Server tidak mengirim response";
+        throw Exception("Server tidak mengirim response");
       }
 
       final data = jsonDecode(response.body);
@@ -473,7 +478,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
+        SnackBar(content: Text("Error: ${_pesanError(e)}")),
       );
     } finally {
       if (mounted) setState(() => _mengekspor = false);
@@ -490,9 +495,10 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
             _buildHeader(),
             Expanded(
               child: RefreshIndicator(
+                color: _Tema.aksen,
                 onRefresh: _muatData,
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: CircularProgressIndicator(color: _Tema.aksen))
                     : _error != null
                     ? _buildError()
                     : _buildKonten(),
@@ -514,15 +520,19 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
           child: Container(
             width: 36, height: 36,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFE9E9EC)),
-            child: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF222226)),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              boxShadow: _Tema.cardShadow(opacity: 0.05),
+            ),
+            child: const Icon(Icons.arrow_back_rounded, size: 18, color: _Tema.teksPutih),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             "Prediksi -- $_lokasiAktif",
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _Tema.teksPutih),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _Tema.teksPutih),
             overflow: TextOverflow.ellipsis,
           ),
         ),
@@ -535,11 +545,29 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
       Padding(
         padding: const EdgeInsets.only(top: 120, left: 24, right: 24),
         child: Column(children: [
-          const Icon(Icons.cloud_off, size: 40, color: _Tema.teksAbu),
-          const SizedBox(height: 8),
-          Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: _Tema.teksAbu)),
-          const SizedBox(height: 12),
-          ElevatedButton(onPressed: _muatData, child: const Text("Coba lagi")),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _Tema.aksen.withOpacity(.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.cloud_off_rounded, size: 32, color: _Tema.aksen),
+          ),
+          const SizedBox(height: 14),
+          Text(_error!, textAlign: TextAlign.center,
+              style: const TextStyle(color: _Tema.teksAbu, fontSize: 13)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _muatData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _Tema.aksen,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("Coba lagi"),
+          ),
         ]),
       ),
     ]);
@@ -568,16 +596,17 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   Widget _buildLokasiBar() {
     return InkWell(
       onTap: _pilihLokasi,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: _Tema.card,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _Tema.cardBorder),
+          boxShadow: _Tema.cardShadow(opacity: 0.03),
         ),
         child: Row(children: [
-          const Icon(Icons.location_on, size: 16, color: _Tema.teksAbu),
+          const Icon(Icons.location_on_rounded, size: 16, color: _Tema.aksen),
           const SizedBox(width: 8),
           Text(_lokasiAktif,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _Tema.teksPutih)),
@@ -597,6 +626,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.cardShadow(),
       ),
       child: const Text(
         "Pilih lokasi terlebih dahulu untuk\nmelihat atau menjalankan prediksi.",
@@ -615,6 +645,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.cardShadow(),
       ),
       child: const Text(
         "Belum ada hasil prediksi.\nLatih model lalu jalankan prediksi.",
@@ -627,21 +658,22 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   Widget _buildAksiCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.cardShadow(),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text("Decision Tree -- Prediksi Kualitas Udara",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _Tema.teksPutih)),
-        const SizedBox(height: 4),
+        const Text("Prediksi Kualitas Udara",
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
+        const SizedBox(height: 6),
         const Text(
           "Latih model memakai histori rata-rata harian, lalu jalankan untuk memproyeksikan 7 hari ke depan.",
-          style: TextStyle(fontSize: 11.5, color: _Tema.teksAbu),
+          style: TextStyle(fontSize: 11.5, color: _Tema.teksAbu, height: 1.4),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(
@@ -650,11 +682,14 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
                   ? const SizedBox(
                   width: 14, height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: _Tema.aksen))
-                  : const Icon(Icons.model_training, size: 16, color: _Tema.aksen),
+                  : const Icon(Icons.model_training_rounded, size: 16, color: _Tema.aksen),
               label: Text(_melatih ? "Melatih..." : "Latih ulang"),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _Tema.teksPutih,
+                backgroundColor: _Tema.card,
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 side: const BorderSide(color: _Tema.cardBorder),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
@@ -666,11 +701,14 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
                   ? const SizedBox(
                   width: 14, height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.play_arrow, size: 18),
-              label: Text(_menjalankan ? "Memproses..." : "Jalankan prediksi"),
+                  : const Icon(Icons.play_arrow_rounded, size: 18),
+              label: Text(_menjalankan ? "Memproses..." : "Jalankan"),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _Tema.aksen,
                 foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
@@ -686,11 +724,14 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
               height: 14,
               child: CircularProgressIndicator(strokeWidth: 2, color: _Tema.teksPutih),
             )
-                : const Icon(Icons.ios_share, size: 16, color: _Tema.teksPutih),
+                : const Icon(Icons.ios_share_rounded, size: 16, color: _Tema.teksPutih),
             label: Text(_mengekspor ? "Mengirim..." : "Export ke Laporan"),
             style: OutlinedButton.styleFrom(
               foregroundColor: _Tema.teksPutih,
+              backgroundColor: _Tema.card,
+              padding: const EdgeInsets.symmetric(vertical: 12),
               side: const BorderSide(color: _Tema.cardBorder),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ),
@@ -702,11 +743,12 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
     if (_model.isEmpty) {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: _Tema.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _Tema.cardBorder),
+          boxShadow: _Tema.cardShadow(),
         ),
         child: const Text("Model belum pernah dilatih untuk lokasi ini.",
             style: TextStyle(color: _Tema.teksAbu, fontSize: 12.5)),
@@ -715,34 +757,35 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.cardShadow(),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text("Akurasi model per parameter",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _Tema.teksPutih)),
-        const SizedBox(height: 10),
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
+        const SizedBox(height: 12),
         ...kDaftarTarget.where((t) => _model.containsKey(t)).map((t) {
           final m = _model[t]!;
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(children: [
               SizedBox(width: 56, child: Text(kLabelTarget[t] ?? t,
-                  style: const TextStyle(fontSize: 12, color: _Tema.teksPutih, fontWeight: FontWeight.w500))),
+                  style: const TextStyle(fontSize: 12, color: _Tema.teksPutih, fontWeight: FontWeight.w600))),
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: LinearProgressIndicator(
                     value: (m.akurasi / 100).clamp(0.0, 1.0),
                     minHeight: 8,
-                    backgroundColor: _Tema.bg,
+                    backgroundColor: const Color(0xFFF3F4F6),
                     valueColor: AlwaysStoppedAnimation(
-                      m.akurasi >= 70 ? const Color(0xFF4ADE80)
-                          : m.akurasi >= 50 ? const Color(0xFFFACC15)
-                          : const Color(0xFFF87171),
+                      m.akurasi >= 70 ? const Color(0xFF22C55E)
+                          : m.akurasi >= 50 ? const Color(0xFFEAB308)
+                          : const Color(0xFFEF4444),
                     ),
                   ),
                 ),
@@ -750,11 +793,11 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
               const SizedBox(width: 8),
               SizedBox(width: 44, child: Text("${m.akurasi.toStringAsFixed(0)}%",
                   textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 11.5, color: _Tema.teksAbu))),
+                  style: const TextStyle(fontSize: 11.5, color: _Tema.teksAbu, fontWeight: FontWeight.w600))),
             ]),
           );
         }),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           "Dilatih dari ${_model.values.first.jumlahDataLatih > 0 ? _model.values.first.jumlahDataLatih : "-"} hari data histori"
               "${_model["aqi"]?.trainedAt != null ? " • ${_formatTanggalJam(_model["aqi"]!.trainedAt!)}" : ""}",
@@ -792,6 +835,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
           color: _Tema.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _Tema.cardBorder),
+          boxShadow: _Tema.cardShadow(),
         ),
         child: Column(children: [
           Text(_formatTanggalLengkap(hariAktif.tanggal),
@@ -807,7 +851,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
             isAqi ? kategori!.label : labelParam,
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: warnaUtama),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text("Tingkat keyakinan model: ${hariAktif.confidence.toStringAsFixed(0)}%",
               style: const TextStyle(fontSize: 11, color: _Tema.teksAbu)),
         ]),
@@ -831,6 +875,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
           color: _Tema.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _Tema.cardBorder),
+          boxShadow: _Tema.cardShadow(),
         ),
         child: SizedBox(
           height: 170,
@@ -891,36 +936,52 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   Widget _buildCardDetailHari() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: _Tema.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _Tema.aksen),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _Tema.aksen.withOpacity(.3)),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+            color: _Tema.aksen.withOpacity(.08),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
           child: Row(children: [
-            const Icon(Icons.calendar_month, size: 16, color: _Tema.aksen),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _Tema.aksen.withOpacity(.12),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: const Icon(Icons.calendar_month_rounded, size: 14, color: _Tema.aksen),
+            ),
             const SizedBox(width: 8),
             const Expanded(child: Text(
               "Detail per hari",
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: _Tema.teksPutih),
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: _Tema.teksPutih),
             )),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: _Tema.aksen.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(6),
+                color: _Tema.aksen.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Text("${_prediksiHarian.length} hari",
-                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _Tema.aksen)),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _Tema.aksen)),
             ),
           ]),
         ),
-        Column(
-          children: List.generate(_prediksiHarian.length, (i) => _barisHari(i)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+          child: Column(
+            children: List.generate(_prediksiHarian.length, (i) => _barisHari(i)),
+          ),
         ),
       ]),
     );
@@ -935,8 +996,8 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: _Tema.bg,
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _Tema.cardBorder),
       ),
       clipBehavior: Clip.antiAlias,
@@ -948,23 +1009,23 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
             _jamDipilihPerHari.putIfAbsent(index, () => kJamSlotList.first);
           }),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(children: [
               SizedBox(width: 64,
                   child: Text(_formatTanggalSingkat(p.tanggal),
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: _Tema.teksPutih))),
-              Container(width: 8, height: 8,
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _Tema.teksPutih))),
+              Container(width: 7, height: 7,
                   decoration: BoxDecoration(color: k.warna, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(child: Text(k.label,
-                  style: TextStyle(fontSize: 11.5, color: k.warna, fontWeight: FontWeight.w500))),
+                  style: TextStyle(fontSize: 12, color: k.warna, fontWeight: FontWeight.w600))),
               Text("AQI ${p.aqi.toStringAsFixed(0)}",
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _Tema.teksPutih)),
               const SizedBox(width: 6),
               AnimatedRotation(
                 turns: terbuka ? 0.5 : 0,
                 duration: const Duration(milliseconds: 150),
-                child: const Icon(Icons.expand_more, size: 16, color: _Tema.teksAbu),
+                child: const Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: _Tema.teksAbu),
               ),
             ]),
           ),
@@ -973,10 +1034,10 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
           duration: const Duration(milliseconds: 150),
           child: terbuka
               ? Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _buildPemilihJam(index, jamAktif),
-              const SizedBox(height: 10),
+              _buildPemilihJam(index, jamAktif, p.tanggal),
+              const SizedBox(height: 12),
               _buildDetailJam(p.tanggal, jamAktif),
             ]),
           )
@@ -986,32 +1047,71 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
     );
   }
 
-  Widget _buildPemilihJam(int hariIndex, int jamAktif) {
+  /// Cari data prediksi untuk kombinasi tanggal + jam tertentu. Dipakai
+  /// baik oleh tombol pemilih jam (untuk nampilin AQI-nya) maupun grid
+  /// detail parameter di bawahnya, supaya tidak ada logika pencarian
+  /// yang diduplikasi.
+  PrediksiHarian _cariSlotJam(DateTime tanggal, int jam) {
+    return _prediksi.firstWhere(
+          (e) => e.tanggal.year == tanggal.year &&
+          e.tanggal.month == tanggal.month &&
+          e.tanggal.day == tanggal.day &&
+          e.tanggal.hour == jam,
+      orElse: () => PrediksiHarian(
+        tanggal: tanggal, aqi: 0, pm25: 0, pm10: 0, co: 0, no2: 0, so2: 0, o3: 0, confidence: 0,
+      ),
+    );
+  }
+
+  Widget _buildPemilihJam(int hariIndex, int jamAktif, DateTime tanggal) {
     return Row(
       children: kJamSlotList.map((jam) {
-        final aktif = jam == jamAktif;
+        final aktif    = jam == jamAktif;
+        final slotJam  = _cariSlotJam(tanggal, jam);
+        final kategori = kategoriDariAqi(slotJam.aqi);
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.only(right: 6),
             child: InkWell(
               onTap: () => setState(() => _jamDipilihPerHari[hariIndex] = jam),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: aktif ? _Tema.aksen : _Tema.card,
-                  borderRadius: BorderRadius.circular(8),
+                  color: aktif ? _Tema.aksen : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: aktif ? _Tema.aksen : _Tema.cardBorder),
                 ),
-                child: Text(
-                  "${jam.toString().padLeft(2, '0')}:00",
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: aktif ? Colors.white : _Tema.teksAbu,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    "${jam.toString().padLeft(2, '0')}:00",
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: aktif ? Colors.white : _Tema.teksPutih,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 3),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(
+                      width: 5, height: 5,
+                      margin: const EdgeInsets.only(right: 4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: aktif ? Colors.white : kategori.warna,
+                      ),
+                    ),
+                    Text(
+                      "AQI ${slotJam.aqi.toStringAsFixed(0)}",
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: aktif ? Colors.white70 : _Tema.teksAbu,
+                      ),
+                    ),
+                  ]),
+                ]),
               ),
             ),
           ),
@@ -1021,15 +1121,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
   }
 
   Widget _buildDetailJam(DateTime tanggal, int jam) {
-    final slot = _prediksi.firstWhere(
-          (e) => e.tanggal.year == tanggal.year &&
-          e.tanggal.month == tanggal.month &&
-          e.tanggal.day == tanggal.day &&
-          e.tanggal.hour == jam,
-      orElse: () => PrediksiHarian(
-        tanggal: tanggal, aqi: 0, pm25: 0, pm10: 0, co: 0, no2: 0, so2: 0, o3: 0, confidence: 0,
-      ),
-    );
+    final slot = _cariSlotJam(tanggal, jam);
 
     return GridView.count(
       crossAxisCount: 3,
@@ -1049,7 +1141,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       decoration: BoxDecoration(
-        color: _Tema.card,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _Tema.cardBorder),
       ),
@@ -1060,7 +1152,7 @@ class _PrediksiKualitasUdaraPageState extends State<PrediksiKualitasUdaraPage> {
               style: const TextStyle(fontSize: 11, color: _Tema.teksAbu, fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           Text(nilai.toStringAsFixed(1),
-              style: const TextStyle(fontSize: 14, color: _Tema.teksPutih, fontWeight: FontWeight.w700)),
+              style: const TextStyle(fontSize: 14, color: _Tema.teksPutih, fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -1119,7 +1211,7 @@ class _PrediksiChartPainter extends CustomPainter {
     final fillPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter, end: Alignment.bottomCenter,
-        colors: [_Tema.aksen.withOpacity(0.25), _Tema.aksen.withOpacity(0.0)],
+        colors: [_Tema.aksen.withOpacity(0.18), _Tema.aksen.withOpacity(0.0)],
       ).createShader(Rect.fromLTWH(0, 0, size.width, chartH));
     final dotPaint = Paint()..color = _Tema.aksen;
 
@@ -1141,7 +1233,7 @@ class _PrediksiChartPainter extends CustomPainter {
     if (rataRata != null) {
       final yRata = chartH - ((rataRata! - minV) / range * chartH);
       final rataPaint = Paint()
-        ..color = _Tema.teksAbu.withOpacity(0.5)
+        ..color = _Tema.teksAbu.withOpacity(0.4)
         ..strokeWidth = 1;
       double x = 0;
       while (x < size.width) {
@@ -1154,7 +1246,7 @@ class _PrediksiChartPainter extends CustomPainter {
 
     if (indexAktif != null && indexAktif! < points.length) {
       final p = points[indexAktif!];
-      canvas.drawCircle(p, 7, Paint()..color = _Tema.aksen.withOpacity(0.25));
+      canvas.drawCircle(p, 7, Paint()..color = _Tema.aksen.withOpacity(0.2));
       canvas.drawCircle(p, 5, Paint()..color = _Tema.aksen);
       canvas.drawCircle(p, 5, Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.5);
     }

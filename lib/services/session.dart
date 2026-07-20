@@ -1,92 +1,61 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// =========================================================
-/// SESSION -- simpan & baca data user yang sedang login.
-/// Dipanggil setelah login berhasil, dan dibaca dari halaman
-/// mana saja yang butuh info user (dashboard, edit profil, dll).
-///
-/// PERUBAHAN dari versi sebelumnya:
-/// - Menambahkan penyimpanan "token" (dari login.php), karena
-///   sekarang endpoint seperti user_profile.php mengidentifikasi
-///   user lewat token di header Authorization, bukan lewat user_id
-///   yang dikirim manual.
-/// =========================================================
 class Session {
-  // Key yang dipakai di SharedPreferences
-  static const _kId    = "user_id";
-  static const _kNama  = "user_nama";
-  static const _kEmail = "user_email";
-  static const _kFoto  = "user_foto";
-  static const _kToken = "user_token";
+  static const _keyUserId   = 'user_id';
+  static const _keyUsername = 'username';
+  static const _keyEmail    = 'email';
+  static const _keyRole     = 'role';
+  static const _keyFotoUrl  = 'foto_url';
 
-  /// Simpan data user setelah login berhasil.
-  /// Dipanggil di halaman login setelah response PHP sukses.
   static Future<void> simpan({
-    required int    id,
-    required String nama,
+    required int userId,
+    required String username,
     required String email,
-    required String token,
-    String?         foto,
+    required String role,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(   _kId,    id);
-    await prefs.setString(_kNama,  nama);
-    await prefs.setString(_kEmail, email);
-    await prefs.setString(_kToken, token);
-    if (foto != null) await prefs.setString(_kFoto, foto);
+    await prefs.setInt(_keyUserId, userId);
+    await prefs.setString(_keyUsername, username);
+    await prefs.setString(_keyEmail, email);
+    await prefs.setString(_keyRole, role);
   }
 
-  /// Ambil ID user yang sedang login.
-  /// Mengembalikan 0 kalau belum ada session.
+  static Future<void> simpanFotoUrl(String fotoUrl) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyFotoUrl, fotoUrl);
+  }
+
   static Future<int> getUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_kId) ?? 0;
+    return prefs.getInt(_keyUserId) ?? 0;
   }
 
-  /// Ambil token login yang sedang aktif.
-  /// Mengembalikan null kalau belum ada session -- dipakai oleh
-  /// semua service (mis. user_profile) untuk header Authorization.
-  static Future<String?> getToken() async {
+  static Future<String> getUsername() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_kToken);
+    return prefs.getString(_keyUsername) ?? '';
   }
 
-  /// Ambil semua data user sekaligus.
-  static Future<Map<String, dynamic>> getData() async {
+  // TAMBAHAN: getter untuk email, sebelumnya belum ada padahal
+  // datanya sudah disimpan lewat Session.simpan(...).
+  static Future<String> getEmail() async {
     final prefs = await SharedPreferences.getInstance();
-    return {
-      "id":    prefs.getInt(_kId)       ?? 0,
-      "nama":  prefs.getString(_kNama)  ?? "",
-      "email": prefs.getString(_kEmail) ?? "",
-      "foto":  prefs.getString(_kFoto),
-      "token": prefs.getString(_kToken),
-    };
+    return prefs.getString(_keyEmail) ?? '';
   }
 
-  /// Update nama & email di session (dipanggil setelah edit profil berhasil).
-  static Future<void> updateProfil({
-    required String nama,
-    required String email,
-    String?         foto,
-  }) async {
+  // TAMBAHAN: getter untuk role, sebelumnya belum ada padahal
+  // datanya sudah disimpan lewat Session.simpan(...).
+  static Future<String> getRole() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kNama,  nama);
-    await prefs.setString(_kEmail, email);
-    if (foto != null) await prefs.setString(_kFoto, foto);
+    return prefs.getString(_keyRole) ?? '';
   }
 
-  /// Hapus semua session (dipanggil saat logout).
-  /// Idealnya dipanggil SETELAH memanggil endpoint logout.php,
-  /// supaya token juga dicabut di server -- bukan cuma di HP.
+  static Future<String?> getFotoUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyFotoUrl);
+  }
+
   static Future<void> hapus() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
-  }
-
-  /// Cek apakah user sedang login (ada session aktif).
-  static Future<bool> sudahLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_kToken);
-    return (prefs.getInt(_kId) ?? 0) > 0 && token != null && token.isNotEmpty;
   }
 }

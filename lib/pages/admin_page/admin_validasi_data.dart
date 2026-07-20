@@ -19,6 +19,17 @@ class AppColors {
   static const warning = Color(0xFFC9852A);
   static const warningSoft = Color(0xFFFCEEDD);
   static const border = Color(0xFFE2E8E6);
+
+  // Shadow tipis yang dipakai konsisten di semua kartu "surface" --
+  // supaya kartu kelihatan sedikit terangkat, tidak flat/menempel
+  // ke background seperti sebelumnya.
+  static List<BoxShadow> cardShadow({double opacity = 0.045, double blur = 16}) => [
+    BoxShadow(
+      color: Colors.black.withOpacity(opacity),
+      blurRadius: blur,
+      offset: const Offset(0, 6),
+    ),
+  ];
 }
 
 class _StatItem {
@@ -54,6 +65,11 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
   // id data yang sedang dalam proses "kirim ke laporan", supaya
   // tombol pada kartu itu saja yang berubah loading (bukan semua).
   final Set<String> _sedangMengekspor = {};
+
+  // PAGINASI untuk daftar kartu di "Tinjauan Manual" -- 5 data per
+  // halaman, direset ke halaman 1 setiap ganti tab / muat ulang data.
+  static const int itemPerHalaman = 5;
+  int halamanSaatIni = 1;
 
   final lokasiController = TextEditingController();
   final List<String> tabs = ["Semua", "Pending", "Valid", "Tolak", "Review"];
@@ -95,6 +111,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     final result = json.decode(response.body);
     setState(() {
       dataList = result["data"] ?? [];
+      halamanSaatIni = 1;
     });
   }
 
@@ -140,7 +157,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Row(
           children: [
             Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
@@ -241,7 +258,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Row(
           children: [
             Icon(Icons.flag_outlined, color: AppColors.warning, size: 20),
@@ -336,7 +353,11 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     final label = info["label"] as String;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: soft, borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        color: soft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -393,6 +414,14 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
 
   int _countWhere(bool Function(dynamic) f) => dataList.where(f).length;
 
+  // ambil potongan list untuk halaman tertentu (paginasi Tinjauan Manual)
+  List _itemHalaman(List sumber, int halaman) {
+    final awal = (halaman - 1) * itemPerHalaman;
+    if (awal >= sumber.length) return [];
+    final akhir = (awal + itemPerHalaman > sumber.length) ? sumber.length : awal + itemPerHalaman;
+    return sumber.sublist(awal, akhir);
+  }
+
   @override
   Widget build(BuildContext context) {
     final total          = dataList.length;
@@ -420,6 +449,10 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
         ? dataList
         : dataList.where((d) => (d["status"] ?? "Pending") == activeTab).toList();
 
+    final totalHalamanFiltered = filtered.isEmpty ? 1 : (filtered.length / itemPerHalaman).ceil();
+    final halamanAman = halamanSaatIni.clamp(1, totalHalamanFiltered);
+    final filteredHalamanIni = _itemHalaman(filtered, halamanAman);
+
     final List problemList = dataList.where((d) => _isBermasalah(d)).toList();
 
     return Scaffold(
@@ -427,20 +460,26 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         foregroundColor: AppColors.ink,
         title: const Text(
           "Validasi Data Kualitas Udara",
           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
         ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: AppColors.border, height: 1),
+        ),
       ),
       body: RefreshIndicator(
+        color: AppColors.accent,
         onRefresh: loadData,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _sectionLabel("01", "Sumber Data"),
             _sumberDataCard(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 26),
 
             _sectionLabel("02", "Ringkasan Validasi Otomatis"),
             _statGrid([
@@ -449,7 +488,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
               _StatItem("Data bermasalah", "$bermasalah", Icons.cancel_outlined, AppColors.danger, AppColors.dangerSoft),
               _StatItem("Rata-rata AQI", avgAqi, Icons.air_outlined, AppColors.warning, AppColors.warningSoft),
             ]),
-            const SizedBox(height: 24),
+            const SizedBox(height: 26),
 
             _sectionLabel("03", "Pemeriksaan Validasi"),
             _checksCard([
@@ -462,7 +501,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
               _CheckItem(Icons.schedule_outlined, "Timestamp",
                   "Memeriksa format tanggal dan duplikasi data", timestampValid, total),
             ]),
-            const SizedBox(height: 24),
+            const SizedBox(height: 26),
 
             _sectionLabel("04", "Tinjauan Manual"),
             Row(
@@ -474,20 +513,34 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
                 Expanded(child: _miniStat("Ditolak / Review", "$reviewGroupCount", AppColors.danger, AppColors.dangerSoft, Icons.cancel_outlined)),
               ],
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             _tabsRow(),
             const SizedBox(height: 14),
 
             if (filtered.isEmpty)
-              _emptyState(loading
-                  ? "Memuat data..."
-                  : (dataList.isEmpty
-                  ? "Belum ada data. Ambil data dari API untuk memulai."
-                  : "Tidak ada data pada kategori ini."))
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: AppColors.cardShadow(),
+                ),
+                child: _emptyState(loading
+                    ? "Memuat data..."
+                    : (dataList.isEmpty
+                    ? "Belum ada data. Ambil data dari API untuk memulai."
+                    : "Tidak ada data pada kategori ini.")),
+              )
             else
-              ...filtered.map((d) => _stationCard(d)).toList(),
+              ...filteredHalamanIni.map((d) => _stationCard(d)).toList(),
 
-            const SizedBox(height: 24),
+            if (filtered.isNotEmpty && totalHalamanFiltered > 1) ...[
+              const SizedBox(height: 4),
+              _paginasiRow(halamanAman, totalHalamanFiltered),
+              const SizedBox(height: 10),
+            ],
+
+            const SizedBox(height: 26),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -500,7 +553,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             _problemTable(problemList),
             const SizedBox(height: 24),
           ],
@@ -511,17 +564,21 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
 
   Widget _sectionLabel(String step, String title) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(6)),
+            width: 26, height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.accentSoft,
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Text(step,
-                style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 1)),
+                style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.5)),
           ),
-          const SizedBox(width: 8),
-          Text(title, style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 15)),
+          const SizedBox(width: 10),
+          Text(title, style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w700, fontSize: 15.5)),
         ],
       ),
     );
@@ -530,42 +587,50 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
   Widget _sumberDataCard() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                width: 40, height: 40,
+                width: 42, height: 42,
                 decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.cloud_outlined, color: AppColors.accent),
+                child: const Icon(Icons.cloud_outlined, color: AppColors.accent, size: 20),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("OpenWeather API", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text("OpenWeather API", style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: AppColors.ink)),
                     SizedBox(height: 2),
-                    Text("Data akan diambil berdasarkan lokasi", style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                    Text("Data akan diambil berdasarkan lokasi", style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           TextField(
             controller: lokasiController,
+            style: const TextStyle(fontSize: 14, color: AppColors.ink),
             decoration: InputDecoration(
               hintText: "Contoh: Depok",
+              hintStyle: const TextStyle(color: AppColors.mutedSoft),
+              prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: AppColors.mutedSoft),
               filled: true,
               fillColor: AppColors.bg,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -580,7 +645,8 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
               icon: loading
                   ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.cloud_download_outlined, size: 18),
-              label: Text(loading ? "Mengambil data..." : "Ambil Data dari API"),
+              label: Text(loading ? "Mengambil data..." : "Ambil Data dari API",
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
             ),
           ),
         ],
@@ -603,20 +669,26 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
   Widget _statCard(_StatItem i) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Container(
-            width: 32, height: 32,
+            width: 34, height: 34,
+            alignment: Alignment.center,
             decoration: BoxDecoration(color: i.soft, borderRadius: BorderRadius.circular(10)),
-            child: Icon(i.icon, color: i.color, size: 16),
+            child: Icon(i.icon, color: i.color, size: 17),
           ),
           const SizedBox(height: 10),
-          Text(i.value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.ink)),
-          const SizedBox(height: 2),
-          Text(i.label, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+          Text(i.value, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800, color: AppColors.ink, height: 1)),
+          const SizedBox(height: 3),
+          Text(i.label, style: const TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -625,18 +697,24 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
   Widget _miniStat(String label, String value, Color color, Color soft, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 28, height: 28,
+            alignment: Alignment.center,
             decoration: BoxDecoration(color: soft, borderRadius: BorderRadius.circular(8)),
             child: Icon(icon, size: 14, color: color),
           ),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.ink)),
-          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.muted), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.ink)),
+          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.muted, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -644,7 +722,12 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
 
   Widget _checksCard(List<_CheckItem> items) {
     return Container(
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(
         children: List.generate(items.length, (idx) {
@@ -652,29 +735,43 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
           final ok     = c.total > 0 && c.pass == c.total;
           final isLast = idx == items.length - 1;
           return Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+            padding: const EdgeInsets.symmetric(vertical: 13),
             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : AppColors.border))),
             child: Row(
               children: [
                 Container(
-                  width: 30, height: 30,
-                  decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)),
-                  child: Icon(c.icon, size: 15, color: AppColors.accent),
+                  width: 32, height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(9)),
+                  child: Icon(c.icon, size: 16, color: AppColors.accent),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 11),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(c.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink)),
+                      const SizedBox(height: 1),
                       Text(c.desc, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
                     ],
                   ),
                 ),
-                Icon(ok ? Icons.check_circle : Icons.error_outline, size: 14, color: ok ? AppColors.success : AppColors.warning),
-                const SizedBox(width: 4),
-                Text("${c.pass}/${c.total}",
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ok ? AppColors.success : AppColors.warning)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ok ? AppColors.successSoft : AppColors.warningSoft,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(ok ? Icons.check_circle : Icons.error_outline, size: 13, color: ok ? AppColors.success : AppColors.warning),
+                      const SizedBox(width: 4),
+                      Text("${c.pass}/${c.total}",
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: ok ? AppColors.success : AppColors.warning)),
+                    ],
+                  ),
+                ),
               ],
             ),
           );
@@ -685,7 +782,7 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
 
   Widget _tabsRow() {
     return SizedBox(
-      height: 36,
+      height: 38,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: tabs.length,
@@ -695,13 +792,17 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
           final count  = t == "Semua" ? dataList.length : dataList.where((d) => (d["status"] ?? "Pending") == t).length;
           final active = activeTab == t;
           return GestureDetector(
-            onTap: () => setState(() => activeTab = t),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            onTap: () => setState(() { activeTab = t; halamanSaatIni = 1; }),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
               decoration: BoxDecoration(
                 color: active ? AppColors.ink : AppColors.surface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: active ? AppColors.ink : AppColors.border),
+                boxShadow: active
+                    ? [BoxShadow(color: AppColors.ink.withOpacity(0.18), blurRadius: 10, offset: const Offset(0, 4))]
+                    : null,
               ),
               child: Text("$t · $count", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.muted)),
             ),
@@ -723,15 +824,15 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
             children: [
               Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              Text(label, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              Text(label, style: const TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w500)),
             ],
           ),
           Text.rich(
             TextSpan(
               text: "${rawValue ?? '-'} ",
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.ink),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ink),
               children: [
-                TextSpan(text: unit, style: const TextStyle(fontSize: 10, color: AppColors.mutedSoft)),
+                TextSpan(text: unit, style: const TextStyle(fontSize: 10, color: AppColors.mutedSoft, fontWeight: FontWeight.w400)),
               ],
             ),
           ),
@@ -748,7 +849,12 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: hasIssue ? AppColors.danger.withOpacity(0.25) : AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -759,8 +865,8 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(d["nama_lokasi"]?.toString() ?? "-", style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 2),
+                    Text(d["nama_lokasi"]?.toString() ?? "-", style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: AppColors.ink)),
+                    const SizedBox(height: 3),
                     Row(
                       children: [
                         const Icon(Icons.schedule, size: 11, color: AppColors.mutedSoft),
@@ -773,15 +879,19 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               if (aqi > 0) _aqiBadge(aqi) else const SizedBox.shrink(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: _statusSoft(status), borderRadius: BorderRadius.circular(20)),
-                child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _statusColor(status))),
+                decoration: BoxDecoration(
+                  color: _statusSoft(status),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _statusColor(status).withOpacity(0.18)),
+                ),
+                child: Text(status, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _statusColor(status))),
               ),
             ],
           ),
@@ -790,21 +900,29 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(color: AppColors.dangerSoft, borderRadius: BorderRadius.circular(10)),
+              decoration: BoxDecoration(
+                color: AppColors.dangerSoft,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.danger.withOpacity(0.15)),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(Icons.warning_amber_rounded, size: 14, color: AppColors.danger),
                   const SizedBox(width: 6),
-                  Expanded(child: Text(_issueText(d), style: const TextStyle(fontSize: 11, color: AppColors.danger))),
+                  Expanded(child: Text(_issueText(d), style: const TextStyle(fontSize: 11, color: AppColors.danger, fontWeight: FontWeight.w500))),
                 ],
               ),
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
             child: GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
@@ -820,8 +938,10 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          _actionButtons(d, status),
+          if (status != "Tolak") ...[
+            const SizedBox(height: 12),
+            _actionButtons(d, status),
+          ],
         ],
       ),
     );
@@ -911,27 +1031,13 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
       ),
     );
 
-    Widget btnPulihkan = Expanded(
-      child: OutlinedButton.icon(
-        onPressed: () => updateStatus(d["id"], "Pending"),
-        icon: const Icon(Icons.restore_outlined, size: 14, color: AppColors.ink),
-        label: const Text("Pulihkan", style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.ink)),
-        style: OutlinedButton.styleFrom(
-          backgroundColor: AppColors.bg,
-          side: const BorderSide(color: AppColors.border),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      ),
-    );
-
     const gap = SizedBox(width: 8);
 
     switch (status) {
       case "Valid":
         return Row(children: [btnKirimLaporan]);
       case "Tolak":
-        return Row(children: [btnPulihkan]);
+        return const SizedBox.shrink();
       case "Review":
         return Row(children: [btnValid, gap, btnTolak, gap, btnPrioritas]);
       default:
@@ -939,19 +1045,61 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     }
   }
 
+  Widget _paginasiRow(int halamanAman, int totalHalaman) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _tombolHalaman(
+          icon: Icons.chevron_left_rounded,
+          aktif: halamanAman > 1,
+          onTap: () => setState(() => halamanSaatIni = halamanAman - 1),
+        ),
+        const SizedBox(width: 14),
+        Text(
+          "Halaman $halamanAman dari $totalHalaman",
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.muted),
+        ),
+        const SizedBox(width: 14),
+        _tombolHalaman(
+          icon: Icons.chevron_right_rounded,
+          aktif: halamanAman < totalHalaman,
+          onTap: () => setState(() => halamanSaatIni = halamanAman + 1),
+        ),
+      ],
+    );
+  }
+
+  Widget _tombolHalaman({required IconData icon, required bool aktif, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: aktif ? onTap : null,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 34, height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: aktif ? AppColors.accentSoft : AppColors.surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: aktif ? AppColors.accent.withOpacity(.3) : AppColors.border),
+        ),
+        child: Icon(icon, size: 20, color: aktif ? AppColors.accent : AppColors.mutedSoft),
+      ),
+    );
+  }
+
   Widget _emptyState(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 40),
+      padding: const EdgeInsets.symmetric(vertical: 44),
       alignment: Alignment.center,
       child: Column(
         children: [
           Container(
-            width: 48, height: 48,
+            width: 56, height: 56,
+            alignment: Alignment.center,
             decoration: const BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
-            child: const Icon(Icons.search, color: AppColors.accent),
+            child: const Icon(Icons.search, color: AppColors.accent, size: 26),
           ),
-          const SizedBox(height: 10),
-          Text(text, style: const TextStyle(color: AppColors.muted, fontSize: 12), textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          Text(text, style: const TextStyle(color: AppColors.muted, fontSize: 12.5), textAlign: TextAlign.center),
         ],
       ),
     );
@@ -960,7 +1108,12 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
   Widget _problemTable(List problemList) {
     if (problemList.isEmpty) {
       return Container(
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+          boxShadow: AppColors.cardShadow(),
+        ),
         child: _emptyState(
           dataList.isEmpty
               ? "Belum ada data untuk divalidasi. Ambil data dari API untuk melihat hasil validasi."
@@ -970,27 +1123,44 @@ class _AdminValidasiDataPageState extends State<AdminValidasiDataPage> {
     }
 
     return Container(
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppColors.cardShadow(),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: List.generate(problemList.length, (i) {
           final d      = problemList[i];
           final isLast = i == problemList.length - 1;
           return Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : AppColors.border))),
+            decoration: BoxDecoration(
+              color: i.isOdd ? AppColors.bg.withOpacity(0.4) : Colors.transparent,
+              border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : AppColors.border)),
+            ),
             child: Row(
               children: [
-                SizedBox(width: 22, child: Text("${i + 1}", style: const TextStyle(fontSize: 11, color: AppColors.mutedSoft))),
+                SizedBox(width: 22, child: Text("${i + 1}", style: const TextStyle(fontSize: 11, color: AppColors.mutedSoft, fontWeight: FontWeight.w600))),
                 const SizedBox(width: 6),
                 Expanded(
                   flex: 2,
-                  child: Text(d["nama_lokasi"]?.toString() ?? "-", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                  child: Text(d["nama_lokasi"]?.toString() ?? "-", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.ink), overflow: TextOverflow.ellipsis),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   flex: 3,
                   child: Text(_issueText(d), style: const TextStyle(fontSize: 11, color: AppColors.danger), overflow: TextOverflow.ellipsis),
                 ),
+                IconButton(
+                  onPressed: () => updateStatus(d["id"], "Pending"),
+                  icon: const Icon(Icons.restore_outlined, size: 16, color: AppColors.accent),
+                  tooltip: "Pulihkan ke Pending",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+                const SizedBox(width: 2),
                 IconButton(
                   onPressed: () => _konfirmasiHapus(d),
                   icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.danger),

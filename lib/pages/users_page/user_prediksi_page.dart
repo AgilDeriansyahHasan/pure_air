@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../services/session.dart';
 import '../../services/users.dart';
 
 // =========================================================
@@ -15,6 +16,23 @@ class _Tema {
   static const teksHitam  = Color(0xFF1C1C1E);
   static const aksen      = Color(0xFF2F80ED); // biru, selaras "PureAir"
   static const kuning     = Color(0xFFFFC107);
+
+  // TAMBAHAN: shadow standar biar kartu tidak terasa flat
+  static List<BoxShadow> shadowKartu = [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.04),
+      blurRadius: 10,
+      offset: const Offset(0, 3),
+    ),
+  ];
+
+  static List<BoxShadow> shadowTipis = [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.05),
+      blurRadius: 5,
+      offset: const Offset(0, 2),
+    ),
+  ];
 }
 
 // =========================================================
@@ -226,6 +244,50 @@ class PrediksiService {
 
     return (data: list, model: model);
   }
+
+  // ---- Favorit KHUSUS prediksi: tabel `favorit_prediksi` di server,
+  //      terpisah dari `favorit_lokasi` (Peta) & `favorit_histori`
+  //      (Histori) ----
+
+  static Future<({bool isFavorit, int? monitoringId})> cekFavorit(
+      String namaLokasi, {
+        required int userId,
+      }) async {
+    if (userId <= 0) return (isFavorit: false, monitoringId: null);
+    final res = await http
+        .post(Uri.parse(_endpoint), body: {
+      "action": "cek_favorit",
+      "nama_lokasi": namaLokasi,
+      "user_id": userId.toString(),
+    })
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(res.body);
+    if (body["status"] != true) return (isFavorit: false, monitoringId: null);
+    return (
+    isFavorit: body["is_favorit"] == true,
+    monitoringId: body["monitoring_id"] != null
+        ? int.tryParse(body["monitoring_id"].toString())
+        : null,
+    );
+  }
+
+  static Future<bool> toggleFavorit(
+      String namaLokasi, {
+        required int userId,
+      }) async {
+    final res = await http
+        .post(Uri.parse(_endpoint), body: {
+      "action": "toggle_favorit",
+      "nama_lokasi": namaLokasi,
+      "user_id": userId.toString(),
+    })
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(res.body);
+    if (body["status"] != true) {
+      throw Exception(body["message"] ?? "Gagal mengubah status favorit");
+    }
+    return body["is_favorit"] == true;
+  }
 }
 
 // =========================================================
@@ -252,11 +314,36 @@ class _PrediksiPageState extends State<PrediksiPage> {
   bool _loading = true;
   String? _error;
 
+  // TAMBAHAN: state untuk tombol favorit (mirip halaman Peta/Histori)
+  int  _userId        = 0; // 0 = belum login
+  bool _isFavorit      = false;
+  bool _favoritLoading = false;
+
+  // TAMBAHAN: foto profil user, diambil dari Session supaya ikon
+  // profil di header menampilkan foto asli, bukan placeholder.
+  String? _fotoUrl;
+
   @override
   void initState() {
     super.initState();
-    _muatDaftarLokasi();
-    _muatData();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _muatUserId();
+    await _muatDaftarLokasi();
+    await _muatData();
+  }
+
+  Future<void> _muatUserId() async {
+    final id   = await Session.getUserId();
+    final foto = await Session.getFotoUrl();
+    if (mounted) {
+      setState(() {
+        _userId  = id;
+        _fotoUrl = foto;
+      });
+    }
   }
 
   Future<void> _muatDaftarLokasi() async {
@@ -279,18 +366,32 @@ class _PrediksiPageState extends State<PrediksiPage> {
         return ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(vertical: 12),
-          children: daftar.map((nama) => ListTile(
-            leading: const Icon(Icons.location_on_outlined, color: _Tema.teksAbu),
-            title: Text(nama, style: const TextStyle(color: _Tema.teksHitam)),
-            trailing: nama == _lokasiAktif
-                ? const Icon(Icons.check, color: _Tema.aksen)
-                : null,
-            onTap: () {
-              Navigator.pop(ctx);
-              setState(() => _lokasiAktif = nama);
-              _muatData();
-            },
-          )).toList(),
+          children: [
+            // TAMBAHAN: handle bar kecil di atas bottom sheet
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: _Tema.cardBorder,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            ...daftar.map((nama) => ListTile(
+              leading: const Icon(Icons.location_on_outlined, color: _Tema.teksAbu),
+              title: Text(nama, style: const TextStyle(color: _Tema.teksHitam)),
+              trailing: nama == _lokasiAktif
+                  ? const Icon(Icons.check, color: _Tema.aksen)
+                  : null,
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() => _lokasiAktif = nama);
+                _muatData();
+              },
+            )),
+          ],
         );
       },
     );
@@ -303,6 +404,19 @@ class _PrediksiPageState extends State<PrediksiPage> {
       initialDate: _prediksiHarian.first.tanggal,
       firstDate: _prediksiHarian.first.tanggal.subtract(const Duration(days: 365)),
       lastDate: _prediksiHarian.last.tanggal.add(const Duration(days: 365)),
+      builder: (context, child) {
+        // TAMBAHAN: samakan warna date picker dengan aksen aplikasi
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: _Tema.aksen,
+              onPrimary: Colors.white,
+              onSurface: _Tema.teksHitam,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (dipilih == null) return;
 
@@ -323,7 +437,13 @@ class _PrediksiPageState extends State<PrediksiPage> {
 
   Future<void> _muatData() async {
     if (_lokasiAktif == "Pilih Lokasi") {
-      setState(() { _loading = false; _prediksi = []; _prediksiHarian = []; _model = {}; });
+      setState(() {
+        _loading = false;
+        _prediksi = [];
+        _prediksiHarian = [];
+        _model = {};
+        _isFavorit = false;
+      });
       return;
     }
     setState(() { _loading = true; _error = null; });
@@ -338,11 +458,59 @@ class _PrediksiPageState extends State<PrediksiPage> {
         _tanggalFilter = null;
         _jamDipilihPerHari.clear();
       });
+      _cekFavoritStatus();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString().replaceFirst("Exception: ", ""));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // TAMBAHAN: cek status favorit lokasi yang sedang aktif, dipanggil
+  // tiap kali lokasi berganti / data prediksi berhasil dimuat.
+  Future<void> _cekFavoritStatus() async {
+    if (_userId <= 0 || _lokasiAktif == "Pilih Lokasi") {
+      if (mounted) setState(() => _isFavorit = false);
+      return;
+    }
+    try {
+      final hasil = await PrediksiService.cekFavorit(_lokasiAktif, userId: _userId);
+      if (!mounted) return;
+      setState(() => _isFavorit = hasil.isFavorit);
+    } catch (_) {
+      // Diamkan -- jangan ganggu tampilan prediksi kalau cek favorit gagal
+    }
+  }
+
+  // TAMBAHAN: toggle favorit dengan optimistic update, sama polanya
+  // dengan halaman Peta & Histori.
+  Future<void> _toggleFavorit() async {
+    if (_userId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Silakan login ulang untuk memakai fitur favorit")),
+      );
+      return;
+    }
+    if (_lokasiAktif == "Pilih Lokasi" || _favoritLoading) return;
+
+    final sebelum = _isFavorit;
+    setState(() {
+      _isFavorit = !_isFavorit;
+      _favoritLoading = true;
+    });
+    try {
+      final hasilBaru = await PrediksiService.toggleFavorit(_lokasiAktif, userId: _userId);
+      if (!mounted) return;
+      setState(() => _isFavorit = hasilBaru);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isFavorit = sebelum); // rollback
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst("Exception: ", ""))),
+      );
+    } finally {
+      if (mounted) setState(() => _favoritLoading = false);
     }
   }
 
@@ -363,9 +531,10 @@ class _PrediksiPageState extends State<PrediksiPage> {
             _buildJudul(),
             Expanded(
               child: RefreshIndicator(
+                color: _Tema.aksen,
                 onRefresh: _muatData,
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: CircularProgressIndicator(color: _Tema.aksen))
                     : _error != null
                     ? _buildError()
                     : _buildKonten(),
@@ -381,8 +550,18 @@ class _PrediksiPageState extends State<PrediksiPage> {
   // HEADER & JUDUL
   // -------------------------------------------------------
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(
+        color: _Tema.bg,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(children: [
         InkWell(
           onTap: () => Navigator.maybePop(context),
@@ -390,21 +569,51 @@ class _PrediksiPageState extends State<PrediksiPage> {
           child: const Icon(Icons.menu, size: 24, color: _Tema.teksHitam),
         ),
         const Spacer(),
-        Row(children: const [
-          Icon(Icons.air, color: _Tema.aksen, size: 22),
-          SizedBox(width: 6),
-          Text("PureAir", style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: _Tema.aksen)),
+        // Logo asli PureAir (icon + text)
+        Row(children: [
+          Image.asset(
+            'assets/logo/pureair_logo_icon.png',
+            width: 28,
+            height: 28,
+          ),
+          const SizedBox(width: 6),
+          Image.asset(
+            'assets/logo/pureair_logo_text.png',
+            height: 18,
+            fit: BoxFit.fitHeight,
+          ),
         ]),
         const Spacer(),
-        Container(
-          width: 32, height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            border: Border.all(color: _Tema.cardBorder),
+        // TAMBAHAN: avatar sekarang menampilkan foto profil asli user
+        // (dari Session), fallback ke ikon polos kalau belum ada foto
+        // / gagal dimuat.
+        GestureDetector(
+          onTap: () {
+            // TODO: arahkan ke halaman profil
+          },
+          child: Container(
+            width: 34,
+            height: 34,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: _Tema.cardBorder),
+              boxShadow: _Tema.shadowTipis,
+            ),
+            child: ClipOval(
+              child: (_fotoUrl != null && _fotoUrl!.isNotEmpty)
+                  ? Image.network(
+                _fotoUrl!,
+                width: 34,
+                height: 34,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                const Icon(Icons.person_outline, size: 18, color: _Tema.teksHitam),
+              )
+                  : const Icon(Icons.person_outline, size: 18, color: _Tema.teksHitam),
+            ),
           ),
-          child: const Icon(Icons.person_outline, size: 18, color: _Tema.teksHitam),
         ),
       ]),
     );
@@ -436,7 +645,17 @@ class _PrediksiPageState extends State<PrediksiPage> {
           const SizedBox(height: 8),
           Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: _Tema.teksAbu)),
           const SizedBox(height: 12),
-          ElevatedButton(onPressed: _muatData, child: const Text("Coba lagi")),
+          ElevatedButton(
+            onPressed: _muatData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _Tema.aksen,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text("Coba lagi"),
+          ),
         ]),
       ),
     ]);
@@ -478,6 +697,7 @@ class _PrediksiPageState extends State<PrediksiPage> {
               color: _Tema.card,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: _Tema.cardBorder),
+              boxShadow: _Tema.shadowTipis,
             ),
             child: Row(children: [
               const Icon(Icons.search, size: 16, color: _Tema.teksAbu),
@@ -508,6 +728,7 @@ class _PrediksiPageState extends State<PrediksiPage> {
               color: _Tema.card,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: _Tema.cardBorder),
+              boxShadow: _Tema.shadowTipis,
             ),
             child: Row(children: [
               const Icon(Icons.calendar_today_outlined, size: 15, color: _Tema.teksAbu),
@@ -527,7 +748,46 @@ class _PrediksiPageState extends State<PrediksiPage> {
           ),
         ),
       ),
+      // TAMBAHAN: tombol favorit, cuma muncul kalau lokasi sudah dipilih
+      // -- mirip ikon hati di halaman Peta & Histori.
+      if (_lokasiAktif != "Pilih Lokasi") ...[
+        const SizedBox(width: 10),
+        _buildFavoritButton(),
+      ],
     ]);
+  }
+
+  // TAMBAHAN: tombol bulat ikon hati, sama gaya dengan halaman Histori.
+  Widget _buildFavoritButton() {
+    return GestureDetector(
+      onTap: _favoritLoading ? null : _toggleFavorit,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 46,
+        height: 46,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _Tema.card,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: _isFavorit ? Colors.redAccent : _Tema.cardBorder,
+            width: _isFavorit ? 1.4 : 1,
+          ),
+          boxShadow: _Tema.shadowTipis,
+        ),
+        child: _favoritLoading
+            ? const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2, color: _Tema.aksen),
+        )
+            : Icon(
+          _isFavorit ? Icons.favorite : Icons.favorite_border,
+          size: 20,
+          color: _isFavorit ? Colors.redAccent : _Tema.teksAbu,
+        ),
+      ),
+    );
   }
 
   Widget _buildBelumPilihLokasi() {
@@ -539,12 +799,17 @@ class _PrediksiPageState extends State<PrediksiPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.shadowKartu,
       ),
-      child: const Text(
-        "Pilih lokasi terlebih dahulu untuk\nmelihat prediksi kualitas udara.",
-        textAlign: TextAlign.center,
-        style: TextStyle(color: _Tema.teksAbu, fontSize: 13),
-      ),
+      child: Column(children: [
+        Icon(Icons.location_searching, size: 34, color: _Tema.teksAbu.withOpacity(0.6)),
+        const SizedBox(height: 10),
+        const Text(
+          "Pilih lokasi terlebih dahulu untuk\nmelihat prediksi kualitas udara.",
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _Tema.teksAbu, fontSize: 13),
+        ),
+      ]),
     );
   }
 
@@ -557,12 +822,17 @@ class _PrediksiPageState extends State<PrediksiPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.shadowKartu,
       ),
-      child: const Text(
-        "Belum ada hasil prediksi untuk\nlokasi ini saat ini.",
-        textAlign: TextAlign.center,
-        style: TextStyle(color: _Tema.teksAbu, fontSize: 13),
-      ),
+      child: Column(children: [
+        Icon(Icons.inbox_outlined, size: 34, color: _Tema.teksAbu.withOpacity(0.6)),
+        const SizedBox(height: 10),
+        const Text(
+          "Belum ada hasil prediksi untuk\nlokasi ini saat ini.",
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _Tema.teksAbu, fontSize: 13),
+        ),
+      ]),
     );
   }
 
@@ -578,6 +848,7 @@ class _PrediksiPageState extends State<PrediksiPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.shadowKartu,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text("Prediksi AQI 7 Hari Ke Depan",
@@ -615,13 +886,15 @@ class _PrediksiPageState extends State<PrediksiPage> {
     return InkWell(
       onTap: () => setState(() => _hariDipilih = i),
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         width: 82,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
         decoration: BoxDecoration(
-          color: _Tema.card,
+          color: aktif ? _Tema.aksen.withOpacity(0.06) : _Tema.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: aktif ? _Tema.aksen : _Tema.cardBorder, width: aktif ? 1.4 : 1),
+          boxShadow: aktif ? _Tema.shadowTipis : null,
         ),
         child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Column(children: [
@@ -660,6 +933,7 @@ class _PrediksiPageState extends State<PrediksiPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.shadowKartu,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Padding(
@@ -734,9 +1008,17 @@ class _PrediksiPageState extends State<PrediksiPage> {
         color: _Tema.card,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _Tema.cardBorder),
+        boxShadow: _Tema.shadowTipis,
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Icon(Icons.warning_amber_rounded, size: 16, color: _Tema.kuning),
+        Container(
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: _Tema.kuning.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.warning_amber_rounded, size: 14, color: _Tema.kuning),
+        ),
         const SizedBox(height: 6),
         Text(teks, style: const TextStyle(fontSize: 10, color: _Tema.teksAbu, height: 1.3)),
       ]),
@@ -749,13 +1031,21 @@ class _PrediksiPageState extends State<PrediksiPage> {
       child: OutlinedButton(
         onPressed: _unduhData,
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: _Tema.aksen),
+          backgroundColor: _Tema.card,
+          side: const BorderSide(color: _Tema.aksen, width: 1.2),
           padding: const EdgeInsets.symmetric(vertical: 13),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        child: const Text(
-          "Download Data",
-          style: TextStyle(color: _Tema.aksen, fontWeight: FontWeight.w700, fontStyle: FontStyle.italic),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.download_rounded, size: 17, color: _Tema.aksen),
+            SizedBox(width: 8),
+            Text(
+              "Download Data",
+              style: TextStyle(color: _Tema.aksen, fontWeight: FontWeight.w700, fontStyle: FontStyle.italic),
+            ),
+          ],
         ),
       ),
     );
@@ -779,9 +1069,21 @@ class _PrediksiPageState extends State<PrediksiPage> {
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setSheet) {
           return Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 20),
+            padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(ctx).viewInsets.bottom + 20),
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // TAMBAHAN: handle bar kecil di atas bottom sheet
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: _Tema.cardBorder,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
                 Row(children: [
                   const Icon(Icons.calendar_month, size: 16, color: _Tema.aksen),
                   const SizedBox(width: 8),
@@ -819,13 +1121,15 @@ class _PrediksiPageState extends State<PrediksiPage> {
             child: InkWell(
               onTap: () => onPilih(jam),
               borderRadius: BorderRadius.circular(8),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: aktif ? _Tema.aksen : _Tema.bg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: aktif ? _Tema.aksen : _Tema.cardBorder),
+                  boxShadow: aktif ? _Tema.shadowTipis : null,
                 ),
                 child: Text(
                   "${jam.toString().padLeft(2, '0')}:00",
@@ -882,8 +1186,11 @@ class _PrediksiPageState extends State<PrediksiPage> {
           Text(kLabelTarget[target] ?? target,
               style: const TextStyle(fontSize: 11, color: _Tema.teksAbu, fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
-          Text(nilai.toStringAsFixed(1),
-              style: const TextStyle(fontSize: 14, color: _Tema.teksHitam, fontWeight: FontWeight.w700)),
+          Text(
+            "${nilai.toStringAsFixed(1)}${kSatuanTarget[target]?.isNotEmpty == true ? " ${kSatuanTarget[target]}" : ""}",
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: _Tema.teksHitam, fontWeight: FontWeight.w700),
+          ),
         ],
       ),
     );
@@ -1010,14 +1317,20 @@ class _PrediksiChartPainter extends CustomPainter {
 
     final linePaint = Paint()
       ..color = _Tema.aksen
-      ..strokeWidth = 2.2
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..style = PaintingStyle.stroke;
     final fillPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter, end: Alignment.bottomCenter,
-        colors: [_Tema.aksen.withOpacity(0.18), _Tema.aksen.withOpacity(0.0)],
+        colors: [_Tema.aksen.withOpacity(0.20), _Tema.aksen.withOpacity(0.0)],
       ).createShader(Rect.fromLTWH(_leftPadding, 0, lebarX, chartH));
     final dotPaint = Paint()..color = _Tema.aksen;
+    final dotBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
 
     final path = Path(), fillPath = Path();
     final points = <Offset>[];
@@ -1035,25 +1348,29 @@ class _PrediksiChartPainter extends CustomPainter {
     canvas.drawPath(fillPath, fillPaint);
     canvas.drawPath(path, linePaint);
 
-    if (indexAktif != null && indexAktif! < points.length) {
-      final p = points[indexAktif!];
-      canvas.drawCircle(p, 7, Paint()..color = _Tema.aksen.withOpacity(0.18));
-      canvas.drawCircle(p, 5, Paint()..color = _Tema.aksen);
-      canvas.drawCircle(p, 5, Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.5);
-    }
-
     const styleN = TextStyle(color: _Tema.teksAbu, fontSize: 9.5);
     const styleA = TextStyle(color: _Tema.teksHitam, fontSize: 9.5, fontWeight: FontWeight.w700);
     const b = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 
     for (int i = 0; i < points.length; i++) {
       final aktif = i == indexAktif;
-      if (!aktif) canvas.drawCircle(points[i], 3, dotPaint);
+      if (!aktif) {
+        canvas.drawCircle(points[i], 3, dotPaint);
+        canvas.drawCircle(points[i], 3, dotBorderPaint);
+      }
       final tp = TextPainter(
         text: TextSpan(text: "${data[i].tanggal.day} ${b[data[i].tanggal.month - 1]}", style: aktif ? styleA : styleN),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(points[i].dx - tp.width / 2, chartH + 6));
+    }
+
+    // Titik aktif digambar TERAKHIR supaya selalu tampil di atas titik lain
+    if (indexAktif != null && indexAktif! < points.length) {
+      final p = points[indexAktif!];
+      canvas.drawCircle(p, 8, Paint()..color = _Tema.aksen.withOpacity(0.15));
+      canvas.drawCircle(p, 5, Paint()..color = _Tema.aksen);
+      canvas.drawCircle(p, 5, dotBorderPaint..strokeWidth = 1.8);
     }
   }
 

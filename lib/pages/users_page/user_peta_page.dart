@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart'; // tambahkan geolocator di pubspec.
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
+import '../../services/session.dart';
 import '../../services/users.dart';
 
 /// =========================================================
@@ -156,14 +157,22 @@ class LokasiUserService {
     throw Exception(body["message"] ?? "Gagal mencari lokasi terdekat");
   }
 
-  // user_id TIDAK dikirim manual dari sini -- user_peta.php mengambilnya
-  // dari $_SESSION['user_id'] yang sudah di-set oleh auth/login.php.
-  // Pastikan http client yang dipakai ApiService menyimpan & mengirim
-  // cookie session PHP (mis. pakai package cookie_jar / dio) supaya ini jalan.
+  // user_id SEKARANG DIKIRIM EKSPLISIT dari body (parameter userId di
+  // bawah), bukan cuma mengandalkan $_SESSION di server. Kenapa: kalau
+  // http client yang dipakai ApiService tidak menyimpan & mengirim ulang
+  // cookie session PHP antar-request, $_SESSION['user_id'] di server
+  // selalu kosong sehingga action favorit_* selalu gagal dianggap
+  // "belum login" walau user sudah login di aplikasi. user_peta.php
+  // sudah menyediakan fallback ke $_POST['user_id'], jadi ini
+  // memastikan fitur favorit tetap jalan terlepas dari perilaku cookie.
 
-  static Future<List<LokasiUserData>> favoritList() async {
+  static Future<List<LokasiUserData>> favoritList({required int userId}) async {
+    if (userId <= 0) {
+      throw Exception("Silakan login ulang untuk memakai fitur favorit");
+    }
     final res = await http.post(Uri.parse(_endpoint), body: {
       "action": "favorit_list",
+      "user_id": userId.toString(),
     });
     final body = jsonDecode(res.body);
     if (body["status"] == true) {
@@ -172,10 +181,14 @@ class LokasiUserService {
     throw Exception(body["message"] ?? "Gagal mengambil data favorit");
   }
 
-  static Future<void> favoritTambah(int lokasiId) async {
+  static Future<void> favoritTambah(int lokasiId, {required int userId}) async {
+    if (userId <= 0) {
+      throw Exception("Silakan login ulang untuk memakai fitur favorit");
+    }
     final res = await http.post(Uri.parse(_endpoint), body: {
       "action": "favorit_tambah",
       "lokasi_id": lokasiId.toString(),
+      "user_id": userId.toString(),
     });
     final body = jsonDecode(res.body);
     if (body["status"] != true) {
@@ -183,10 +196,14 @@ class LokasiUserService {
     }
   }
 
-  static Future<void> favoritHapus(int lokasiId) async {
+  static Future<void> favoritHapus(int lokasiId, {required int userId}) async {
+    if (userId <= 0) {
+      throw Exception("Silakan login ulang untuk memakai fitur favorit");
+    }
     final res = await http.post(Uri.parse(_endpoint), body: {
       "action": "favorit_hapus",
       "lokasi_id": lokasiId.toString(),
+      "user_id": userId.toString(),
     });
     final body = jsonDecode(res.body);
     if (body["status"] != true) {
@@ -211,6 +228,11 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
 
   List<LokasiUserData> _lokasiList = [];
   Set<int> _favoritIds = {};
+  int _userId = 0; // ← 0 = belum login, sesuai konvensi Session.getUserId()
+
+  // TAMBAHAN: foto profil user, diambil dari Session supaya avatar di
+  // header menampilkan foto asli, bukan cuma ikon placeholder.
+  String? _fotoUrl;
 
   bool _loading = true;
   String? _error;
@@ -218,13 +240,35 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
   // null = tampilkan semua kategori
   String? _filterKategori;
 
+  // TAMBAHAN: dulu menu "Lokasi Favorit" di drawer cuma mereset
+  // _filterKategori (jadi malah nampilin SEMUA lokasi, bukan yang
+  // difavoritkan) -- makanya fitur ini kelihatan "tidak jalan". Sekarang
+  // dipakai flag terpisah supaya bisa gabung dengan filter kategori juga.
+  bool _hanyaFavorit = false;
+
   LokasiUserData? _selected;
   bool _mencariTerdekat = false;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _muatUserId();
+    await _loadData();
+  }
+
+  Future<void> _muatUserId() async {
+    final id   = await Session.getUserId();
+    final foto = await Session.getFotoUrl();
+    if (mounted) {
+      setState(() {
+        _userId  = id;
+        _fotoUrl = foto;
+      });
+    }
   }
 
   @override
@@ -242,7 +286,7 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
       final semua = await LokasiUserService.list(search: search ?? _searchCtrl.text.trim());
       List<LokasiUserData> favorit = [];
       try {
-        favorit = await LokasiUserService.favoritList();
+        favorit = await LokasiUserService.favoritList(userId: _userId);
       } catch (_) {
         // User belum login / gagal ambil favorit -- jangan blok halaman
       }
@@ -260,9 +304,18 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
     }
   }
 
+  // DIUBAH: sekarang menggabungkan dua filter -- status favorit
+  // (_hanyaFavorit) DAN kategori AQI (_filterKategori) -- bukan cuma
+  // kategori saja seperti sebelumnya.
   List<LokasiUserData> get _displayedList {
-    if (_filterKategori == null) return _lokasiList;
-    return _lokasiList.where((l) => l.kategori == _filterKategori).toList();
+    var list = _lokasiList;
+    if (_hanyaFavorit) {
+      list = list.where((l) => _favoritIds.contains(l.id)).toList();
+    }
+    if (_filterKategori != null) {
+      list = list.where((l) => l.kategori == _filterKategori).toList();
+    }
+    return list;
   }
 
   int get _totalAktif => _lokasiList.length;
@@ -277,6 +330,10 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
   }
 
   Future<void> _toggleFavorit(LokasiUserData lokasi) async {
+    if (_userId <= 0) {
+      _showError("Silakan login ulang untuk memakai fitur favorit");
+      return;
+    }
     final sudahFavorit = _favoritIds.contains(lokasi.id);
     setState(() {
       if (sudahFavorit) {
@@ -287,9 +344,9 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
     });
     try {
       if (sudahFavorit) {
-        await LokasiUserService.favoritHapus(lokasi.id);
+        await LokasiUserService.favoritHapus(lokasi.id, userId: _userId);
       } else {
-        await LokasiUserService.favoritTambah(lokasi.id);
+        await LokasiUserService.favoritTambah(lokasi.id, userId: _userId);
       }
     } catch (e) {
       setState(() {
@@ -382,72 +439,6 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
     );
   }
 
-  void _showDetailSheet(LokasiUserData lokasi) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setSheetState) {
-          final isFavorit = _favoritIds.contains(lokasi.id);
-          return Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.location_on, color: lokasi.warna),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text("Sensor ${lokasi.nama}",
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                    ),
-                    IconButton(
-                      onPressed: () async {
-                        await _toggleFavorit(lokasi);
-                        setSheetState(() {});
-                      },
-                      icon: Icon(
-                        isFavorit ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorit ? Colors.redAccent : Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-                _AqiBadge(aqi: lokasi.aqi, kategori: lokasi.kategori, warna: lokasi.warna, besar: true),
-                const SizedBox(height: 12),
-                _detailRow("Koordinat",
-                    "${lokasi.koordinat.latitude.toStringAsFixed(4)}, ${lokasi.koordinat.longitude.toStringAsFixed(4)}"),
-                _detailRow("Terakhir update", lokasi.updateTerakhir),
-                if (lokasi.punyaParameter) ...[
-                  const SizedBox(height: 16),
-                  const Text("Parameter Polutan",
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87)),
-                  const SizedBox(height: 8),
-                  _buildParameterGrid(lokasi),
-                ] else ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration:
-                    BoxDecoration(color: const Color(0xFFF5F6FA), borderRadius: BorderRadius.circular(10)),
-                    child: const Text(
-                      "Belum ada data parameter polutan untuk lokasi ini.",
-                      style: TextStyle(fontSize: 11.5, color: Colors.grey),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          );
-        });
-      },
-    );
-  }
-
   Widget _buildParameterGrid(LokasiUserData lokasi) {
     final items = <Map<String, String?>>[
       {"label": "PM2.5", "unit": "µg/m³", "value": lokasi.pm25?.toStringAsFixed(1)},
@@ -522,16 +513,87 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
             children: [
               _buildHeader(),
               const SizedBox(height: 18),
+              // TAMBAHAN: banner penanda kalau lagi mode "hanya favorit",
+              // + tombol silang buat balik nampilin semua lokasi lagi.
+              if (_hanyaFavorit) _buildFavoritBanner(),
               _buildSearchFilterRow(),
               const SizedBox(height: 14),
               _buildMapCard(),
               const SizedBox(height: 14),
               _buildSummaryCard(),
               const SizedBox(height: 14),
-              if (_selected != null) _buildSelectedLocationCard(_selected!),
+              if (_displayedList.isEmpty)
+                _buildEmptyFilterState()
+              else if (_selected != null && _displayedList.any((l) => l.id == _selected!.id))
+                _buildSelectedLocationCard(_selected!)
+              else if (_displayedList.isNotEmpty)
+                  _buildSelectedLocationCard(_displayedList.first),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // TAMBAHAN: banner kecil di atas daftar/peta, muncul cuma waktu mode
+  // "Lokasi Favorit" aktif dari drawer.
+  Widget _buildFavoritBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withOpacity(.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withOpacity(.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.favorite, size: 16, color: Colors.redAccent),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text("Menampilkan lokasi favorit",
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.black87)),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => setState(() => _hanyaFavorit = false),
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.close_rounded, size: 18, color: Colors.black45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // TAMBAHAN: kondisi kosong -- misalnya user belum punya lokasi
+  // favorit sama sekali waktu mode "hanya favorit" aktif.
+  Widget _buildEmptyFilterState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE3E6EA)),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            _hanyaFavorit ? Icons.favorite_border : Icons.filter_alt_off_outlined,
+            size: 32,
+            color: Colors.grey,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _hanyaFavorit
+                ? "Belum ada lokasi yang kamu favoritkan.\nTap ikon hati di kartu lokasi untuk menambahkan."
+                : "Tidak ada lokasi yang cocok dengan filter ini.",
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12.5, color: Colors.grey),
+          ),
+        ],
       ),
     );
   }
@@ -542,28 +604,82 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(20),
+            Padding(
+              padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
-                  Icon(Icons.air, color: AppColors.primary, size: 26),
-                  SizedBox(width: 8),
-                  Text("PureAir", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  Image.asset(
+                    'assets/logo/pureair_logo_icon.png',
+                    width: 72,
+                    height: 72,
+                  ),
+                  const SizedBox(width: 8),
+                  Image.asset(
+                    'assets/logo/pureair_logo_text.png',
+                    height: 36,
+                    fit: BoxFit.fitHeight,
+                  ),
                 ],
               ),
             ),
             const Divider(height: 1),
+            // TAMBAHAN: ringkasan akun singkat di drawer, pakai foto
+            // profil asli supaya konsisten dengan avatar di header.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+              child: Row(
+                children: [
+                  ClipOval(
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      color: const Color(0xFFF0F0F0),
+                      child: (_fotoUrl != null && _fotoUrl!.isNotEmpty)
+                          ? Image.network(
+                        _fotoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.person_outline, size: 18, color: Colors.black54),
+                      )
+                          : const Icon(Icons.person_outline, size: 18, color: Colors.black54),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      "Akun Saya",
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.map_outlined),
               title: const Text("Peta Lokasi"),
-              onTap: () => Navigator.pop(context),
+              // DIUBAH: sekarang juga mematikan mode "hanya favorit" biar
+              // balik nampilin semua lokasi seperti seharusnya.
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _hanyaFavorit = false);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.favorite_border),
               title: const Text("Lokasi Favorit"),
+              // DIUBAH: dulu cuma reset _filterKategori (jadi malah
+              // nampilin SEMUA lokasi). Sekarang benar-benar mengaktifkan
+              // filter "_hanyaFavorit" supaya cuma lokasi yang sudah
+              // ditandai favorit (hati terisi) yang ditampilkan.
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _filterKategori = null);
+                setState(() {
+                  _hanyaFavorit = true;
+                  _filterKategori = null;
+                });
               },
             ),
             ListTile(
@@ -623,24 +739,42 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
+                  Image.asset(
+                    'assets/logo/pureair_logo_icon.png',
                     width: 30,
                     height: 30,
-                    decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                    child: const Icon(Icons.air, color: Colors.white, size: 18),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    "PureAir",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.black87),
+                  Image.asset(
+                    'assets/logo/pureair_logo_text.png',
+                    height: 20,
+                    fit: BoxFit.fitHeight,
                   ),
                 ],
               ),
             ),
-            CircleAvatar(
-              radius: 17,
-              backgroundColor: const Color(0xFFF0F0F0),
-              child: const Icon(Icons.person_outline, color: Colors.black54, size: 18),
+            // TAMBAHAN: avatar sekarang menampilkan foto profil asli
+            // user (dari Session), fallback ke ikon polos kalau belum
+            // ada foto / gagal dimuat.
+            GestureDetector(
+              onTap: () {
+                // TODO: arahkan ke halaman profil
+              },
+              child: ClipOval(
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  color: const Color(0xFFF0F0F0),
+                  child: (_fotoUrl != null && _fotoUrl!.isNotEmpty)
+                      ? Image.network(
+                    _fotoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.person_outline, color: Colors.black54, size: 18),
+                  )
+                      : const Icon(Icons.person_outline, color: Colors.black54, size: 18),
+                ),
+              ),
             ),
           ],
         ),
@@ -847,25 +981,34 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
     );
   }
 
-  // ---------- Kartu lokasi terpilih ----------
+  // ---------- Kartu lokasi terpilih -- sekarang langsung menampilkan
+  // seluruh detail (koordinat, waktu update, suhu/kelembapan, dan
+  // seluruh parameter polutan) tanpa perlu tombol "Lihat Detail" lagi.
   Widget _buildSelectedLocationCard(LokasiUserData lokasi) {
     final isFavorit = _favoritIds.contains(lokasi.id);
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFE3E6EA)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ----- Header kartu: nama, favorit, badge AQI -----
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Icon(Icons.location_on, color: lokasi.warna, size: 20),
+              const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   "Sensor ${lokasi.nama}",
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -873,74 +1016,62 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
                 onPressed: () => _toggleFavorit(lokasi),
                 icon: Icon(
                   isFavorit ? Icons.favorite : Icons.favorite_border,
-                  size: 18,
+                  size: 20,
                   color: isFavorit ? Colors.redAccent : Colors.grey,
                 ),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
-              const SizedBox(width: 8),
-              _AqiBadge(aqi: lokasi.aqi, kategori: lokasi.kategori, warna: lokasi.warna),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _infoBox(
-                  "PM2.5",
-                  lokasi.pm25 != null ? "${lokasi.pm25!.toStringAsFixed(1)} µg/m³" : "-",
-                  "Kelembapan",
-                  lokasi.kelembapan != null ? "${lokasi.kelembapan!.toStringAsFixed(0)}%" : "-",
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _infoBoxSingleRow(
-            "Suhu",
-            lokasi.suhu != null ? "${lokasi.suhu!.toStringAsFixed(1)}°C" : "-",
-            "Waktu",
-            lokasi.updateTerakhir,
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
+          const SizedBox(height: 10),
+          _AqiBadge(aqi: lokasi.aqi, kategori: lokasi.kategori, warna: lokasi.warna, besar: true),
+
+          const SizedBox(height: 16),
+
+          // ----- Info koordinat & waktu update -----
+          Container(
             width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => _showDetailSheet(lokasi),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: AppColors.primary),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text(
-                "Lihat Detail",
-                style: TextStyle(color: AppColors.primary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600),
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F8FA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                _detailRow("Koordinat",
+                    "${lokasi.koordinat.latitude.toStringAsFixed(4)}, ${lokasi.koordinat.longitude.toStringAsFixed(4)}"),
+                _detailRow("Terakhir update", lokasi.updateTerakhir),
+              ],
             ),
           ),
+
+          const SizedBox(height: 14),
+
+          // ----- Parameter polutan lengkap -----
+          const Text(
+            "Parameter Polutan",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.black87),
+          ),
+          const SizedBox(height: 8),
+          if (lokasi.punyaParameter)
+            _buildParameterGrid(lokasi)
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFF5F6FA), borderRadius: BorderRadius.circular(10)),
+              child: const Text(
+                "Belum ada data parameter polutan untuk lokasi ini.",
+                style: TextStyle(fontSize: 11.5, color: Colors.grey),
+              ),
+            ),
         ],
       ),
     );
   }
 
   Widget _infoBox(String label1, String value1, String label2, String value2) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFE3E6EA)),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: _infoCell(label1, value1)),
-          Container(width: 1, height: 44, color: const Color(0xFFE3E6EA)),
-          Expanded(child: _infoCell(label2, value2)),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoBoxSingleRow(String label1, String value1, String label2, String value2) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: const Color(0xFFE3E6EA)),
@@ -971,7 +1102,7 @@ class _MapAirQualityUserPageState extends State<MapAirQualityUserPage> {
   }
 }
 
-/// Badge bulat kecil "95 Sedang" di kartu lokasi / detail sheet
+/// Badge bulat kecil "95 Sedang" di kartu lokasi
 class _AqiBadge extends StatelessWidget {
   final int aqi;
   final String kategori;
