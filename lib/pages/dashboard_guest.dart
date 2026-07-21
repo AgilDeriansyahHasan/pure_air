@@ -866,7 +866,6 @@ class _DashboardGuestState extends State<DashboardGuest> {
                       menuItem(Icons.auto_graph_rounded, "Prediksi"),
                       menuItem(Icons.map_rounded, "Map"),
                       menuItem(Icons.blur_on_rounded, "Polutan"),
-                      menuItem(Icons.info_outline_rounded, "Tentang"),
 
                       const Spacer(),
 

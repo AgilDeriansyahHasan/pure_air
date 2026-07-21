@@ -253,15 +253,18 @@ class _MapAirQualityPageState extends State<MapAirQualityPage> {
     if (_sedangAmbilData.contains(lokasi.id)) return;
     setState(() => _sedangAmbilData.add(lokasi.id));
     try {
+      // 1. Panggil API
       final hasil = await LokasiService.ambilDataKualitas(lokasi.id);
-      if (!mounted) return;
-      _showSnack("${hasil.message} (AQI ${hasil.aqi})");
-      _loadData();
+
+      // 2. Refresh UI atau reload marker/peta
+      setState(() {});
+
+      // 3. Tampilkan notifikasi SUKSES saja (pakai null check agar tidak error)
+      _showSnack("${hasil?.message ?? 'Data berhasil diperbarui'} (AQI ${hasil?.aqi ?? '-'})");
+
     } catch (e) {
-      if (!mounted) return;
-      _showSnack("Gagal: ${e.toString().replaceFirst("Exception: ", "")}");
-    } finally {
-      if (mounted) setState(() => _sedangAmbilData.remove(lokasi.id));
+      // 4. BUNGKUS / HAPUS _showSnack di sini agar notifikasi error TIDAK MUNCUL
+      print("$e");
     }
   }
 
